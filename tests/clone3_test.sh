@@ -298,7 +298,9 @@ done
 report "failed starts left no container state behind" $? "ps -a rows: $(state_rows)"
 
 # ---------------------------------------------------------------------------------------------
-# Informational timing (never fails): median of $TIMING_RUNS runs of `run -- /bin/true` with limits.
+# Informational timing (never fails): median of $TIMING_RUNS runs of `run --net none -- /bin/true`
+# with limits. --net none is explicit (and printed below): the default is also none, but a veth
+# setup (its floor is far above the cgroup cost, see docs/BENCHMARKS.md) would hide the difference.
 # ---------------------------------------------------------------------------------------------
 echo "---- timing (information only) ----"
 time_us() { # time_us <mode>: wall-clock microseconds of one run
@@ -323,9 +325,9 @@ for _ in $(seq 1 "$TIMING_RUNS"); do                            # interleaved: d
     fast+=("$(time_us clone3)")
     slow+=("$(time_us migrate)")
 done
-printf 'INFO: %-34s %10s %10s\n' "run -- /bin/true, $TIMING_RUNS runs, limits" "median ms" "min ms"
-printf 'INFO: %-34s %10s %10s\n' "clone3 into the cgroup" "$(stat_ms median "${fast[@]}")" "$(stat_ms min "${fast[@]}")"
-printf 'INFO: %-34s %10s %10s\n' "clone() + cgroup.procs (migrate)" "$(stat_ms median "${slow[@]}")" "$(stat_ms min "${slow[@]}")"
+printf 'INFO: %-52s %10s %10s\n' "run --net none /bin/true, $TIMING_RUNS runs, limits" "median ms" "min ms"
+printf 'INFO: %-52s %10s %10s\n' "clone3 into the cgroup" "$(stat_ms median "${fast[@]}")" "$(stat_ms min "${fast[@]}")"
+printf 'INFO: %-52s %10s %10s\n' "clone() + cgroup.procs (migrate)" "$(stat_ms median "${slow[@]}")" "$(stat_ms min "${slow[@]}")"
 
 # ---------------------------------------------------------------------------------------------
 # Nothing may be left at the end.

@@ -1,7 +1,8 @@
 config,status,n,failed,min_ms,median_ms,mean_ms,p95_ms,max_ms,stdev_ms,note
-host_true,measured,30,0,1.454,1.716,1.982,3.640,4.329,0.703,fork+exec of true on the host
-unshare_ns,measured,30,0,3.527,3.893,4.364,8.377,9.963,1.567,"host unshare, namespaces only"
-minibox_nolimits,measured,30,0,3.439,3.994,5.733,9.242,9.654,2.448,"minibox run --net none, no limits"
-minibox_limits,measured,30,0,3.506,32.124,21.922,33.828,64.452,16.043,minibox run --net none + memory/cpu/pids limits
-minibox_veth_limits,measured,30,0,114.504,165.379,150.778,194.342,217.758,30.341,minibox run --net veth + limits
+host_true,measured,30,0,1.391,1.913,1.913,2.347,2.585,0.279,fork+exec of true on the host
+unshare_ns,measured,30,0,3.505,3.948,4.491,8.708,9.639,1.563,"host unshare, namespaces only"
+minibox_nolimits,measured,30,0,3.496,4.064,5.643,8.903,16.835,3.000,"minibox run --net none, no limits"
+minibox_limits,measured,30,0,3.406,3.770,4.836,8.449,8.590,1.999,minibox run --net none + memory/cpu/pids limits (clone3 into the cgroup)
+minibox_limits_migrate,measured,30,0,3.555,16.529,19.888,34.005,65.394,15.611,"same limits, MINIBOX_NO_CLONE3=1: clone() then move into the cgroup (old path)"
+minibox_veth_limits,measured,30,0,114.412,115.321,122.097,165.732,166.501,17.432,minibox run --net veth + limits
 docker,not measured,0,0,,,,,,,not measured: docker CLI not found

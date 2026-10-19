@@ -1,0 +1,41 @@
+minibox benchmarks 20261019-112705
+NOTE: docker comparison not measured (docker CLI not found)
+
+== A. Startup time (N=30 per configuration, 3 warm-up(s), seed 1792409225) ==
+config                    n fail    min_ms    median      mean       p95    max_ms     stdev
+host_true                30    0      1.45      1.72      1.98      3.64      4.33      0.70
+unshare_ns               30    0      3.53      3.89      4.36      8.38      9.96      1.57
+minibox_nolimits         30    0      3.44      3.99      5.73      9.24      9.65      2.45
+minibox_limits           30    0      3.51     32.12     21.92     33.83     64.45     16.04
+minibox_veth_limits      30    0    114.50    165.38    150.78    194.34    217.76     30.34
+docker                 not measured (not measured: docker CLI not found)
+
+Section A (startup) took 6.1 s
+
+== B. Memory overhead: container running `sleep 300` (bytes, summed over k containers) ==
+minibox     k=1  cgroup=253952     init=1007616    monitor/shim=223232     total=477184     per-container=477184 pss
+minibox     k=5  cgroup=1253376    init=1320960    monitor/shim=970752     total=2224128    per-container=444826 pss
+minibox     k=10 cgroup=2764800    init=1582080    monitor/shim=2002944    total=4767744    per-container=476774 pss
+host_sleep  k=1  cgroup=None       init=5261312    monitor/shim=None       total=5261312    per-container=5261312 pss
+host_sleep  k=5  cgroup=None       init=11110400   monitor/shim=None       total=11110400   per-container=2222080 pss
+host_sleep  k=10 cgroup=None       init=18353152   monitor/shim=None       total=18353152   per-container=1835315 pss
+docker      not measured (docker CLI not found)
+incremental cost per extra container (minibox): 478040 bytes
+incremental cost per extra container (host_sleep): 1454399 bytes
+
+Section B (memory) took 3.1 s
+
+== C. Limit enforcement (expected vs measured) ==
+OK: memory/exit_code | expected 137 (OOM-killed) | measured 137
+OK: memory/oom_kill | expected >= 1 | measured 3
+OK: memory/peak_vs_limit | expected <= 1.10 x 64 MiB | measured 64.0 MiB | memory.peak
+OK: memory/control_exceeds_64M | expected exit 0 and peak > 64 MiB (limit raised to 1G) | measured exit 0, peak 192.9 MiB | bounded workload shows it needs more than 64M
+OK: pids/peak | expected <= 20 | measured 20 | pids.peak
+OK: pids/fork_failure | expected fork refused for some of 60 children | measured yes
+OK: cpu/ratio_at_0.5 | expected 0.40 - 0.60 CPU | measured 0.508 | usage_usec / wall time, ~5 s busy loop
+OK: cpu/control_ratio | expected > 0.80 CPU (limit 2 CPUs, one busy loop) | measured 0.997 | control: loop is not throttled
+
+Section C (limits) took 10.4 s
+
+CLEANUP: OK (no box-* cgroup, vethh* interface or container state left)
+Total time 19.5 s

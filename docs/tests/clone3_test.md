@@ -34,6 +34,7 @@ It sources `tests/lib.sh` and is the last script in `tests/run_all.sh`. `INFO:` 
 - **failure injection:** `--memory abc`, `--memory 0`, `--cpus 0`, `--pids 0` give a clear `minibox:` message and a non-zero exit. A "fake rootfs" (a directory containing an empty `bin/busybox`) passes the Alpine check but cannot run anything, so the container fails *after* its
   cgroup (and, with `--net veth`, its veth) was prepared: non-zero exit with a message in both modes, no cgroup, no veth, no state. A failure of a cgroup file write itself cannot be injected safely, so that cleanup path is covered by these cases.
 - **c. timing (information only):** 20 interleaved `run --net none --memory 256M --cpus 1 --pids 64 -- /bin/true` per mode after one warm-up each; prints median and minimum in ms side by side. Never fails; numbers depend on the machine.
+  `--net none` is passed explicitly and the header line of the table says so (`run --net none /bin/true, 20 runs, limits`). It is also the default, but a veth network setup costs far more than the cgroup step (see `docs/BENCHMARKS.md`, veth row) and would hide the difference between the clone3 path and the `cgroup.procs` migration path. If a timing table ever shows nearly equal medians for both modes at a veth-sized value, check the header line first.
 - **e. leftovers:** no `box-*` cgroup, no `vethh*` interface, `ps -a` empty and the state directory holding nothing but `.lock` (`state_clean` from `tests/lib.sh`; minibox keeps `.lock` on purpose).
 
 ## System calls used and why

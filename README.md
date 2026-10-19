@@ -48,7 +48,7 @@ Every veth container gets its own subnet `10.0.n.0/24` (the lowest free `n`), so
 
 ### Limits and start-up: `clone3` into the cgroup
 With `--memory`, `--cpus` or `--pids`, minibox creates `/sys/fs/cgroup/minibox/box-<id>` and writes the limits first, then creates the container directly inside it with `clone3(CLONE_INTO_CGROUP)` (Linux 5.7+),
-so the kernel never has to move a running process between cgroups (that move took 9-36 ms). If `clone3` is unavailable (old kernel, seccomp), minibox falls back to `clone()` and writing the PID to `cgroup.procs` and prints one note.
+so the kernel never has to move a running process between cgroups (that move was the slow step; see Benchmarks below). If `clone3` is unavailable (old kernel, seccomp), minibox falls back to `clone()` and writing the PID to `cgroup.procs` and prints one note.
 **Diagnostic switch:** `MINIBOX_NO_CLONE3=1` forces the fallback path (used by the benchmark row `minibox_limits_migrate` and by `tests/clone3_test.sh` to compare both). `minibox exec` still joins the cgroup by writing `cgroup.procs`, so `exec` still pays that cost.
 
 ### `--init`: a tiny PID 1 (opt-in)
@@ -155,16 +155,37 @@ make charts          # no root: python3 bench/make_charts.py bench/results/lates
 Method, how to read the charts and the limitations of the numbers: `docs/BENCHMARKS.md`.
 
 ### Results (reference run)
-One full run (N=30 per configuration) on the author's WSL2 machine is kept in `bench/results/reference/`. Starting a container without limits took a median of 3.994 ms, close to raw `unshare` (3.893 ms), so the rootfs setup adds little to namespace creation. With limits the median was 32.124 ms while the minimum stayed at 3.506 ms; strace showed that the extra delay was the parent's write to `cgroup.procs` (9-36 ms per run; a cgroup migration, likely slow because of a kernel lock/RCU wait, not proven), so containers with limits are now created directly inside their cgroup with `clone3(CLONE_INTO_CGROUP)`. This reference run was made before that change; the after-fix numbers are a placeholder in `docs/BENCHMARKS.md` until the benchmark is re-run (`minibox_limits_migrate` is the old path, for comparison). With a veth network the median was 165.379 ms, likely because of the `ip` commands. Docker was not measured (not installed). All eight limit checks passed. Details, the full tables, the machine, the analysis and the limitations are in `docs/BENCHMARKS.md`.
+Two full runs (N=30 per configuration, WSL2, same machine) are kept: `bench/results/reference-before-clone3/` (before the `clone3` change) and `bench/results/reference/` (after). Docker was not measured (not installed). The story, in five steps:
+
+1. **Measure.** In the first run, starting a container with limits had a median of 32.124 ms against 3.994 ms without limits, while its minimum (3.506 ms) was as low as without limits: a stall, not a constant cost.
+2. **Strace.** `strace -f -ttt -T` showed the time is spent in the parent's write of the child's PID to the container's `cgroup.procs`, a cgroup *migration* of a running process, and in no other system call.
+3. **Find.** So the delay is explained as far as *where* it happens. *Why* the write is slow is a hypothesis (a kernel grace-period wait of variable length); it was not measured in the kernel.
+4. **Fix.** Create the cgroup and its limits first, then create the container directly inside it with `clone3(CLONE_INTO_CGROUP)`. The old path stays as a fallback (`MINIBOX_NO_CLONE3=1`, kernels older than 5.7) and as a benchmark row, `minibox_limits_migrate`.
+5. **Re-measure.** With `clone3`, `minibox_limits` has a median of 3.770 ms, p95 8.449 ms and max 8.590 ms; `minibox_nolimits` in the same run has 4.064 ms, 8.903 ms and 16.835 ms: startup with limits is within noise of startup without limits. The old path in the same run: median 16.529 ms, p95 34.005 ms. Its median differs from the first run's (32.124 ms) because its runs form a fast and a slow group and the median falls wherever half of them land; the p95 agrees (33.828 ms before, 34.005 ms after).
+
+With a veth network the median went from 165.379 ms to 115.321 ms (the earlier median included the stall), but the minimum is the same in both runs (114.504 ms before, 114.412 ms after): a network-setup floor remains that was **not investigated** (hypotheses: several `ip` commands are forked, interfaces are moved between namespaces). All eight limit checks passed in both runs. Details, the machine, the analysis and the limitations are in `docs/BENCHMARKS.md`.
+
+Startup time before and after (milliseconds; printed by `python3 bench/make_report_tables.py --compare bench/results/reference-before-clone3 bench/results/reference`):
+
+| Configuration | Run | n | median (ms) | mean (ms) | p95 (ms) | max (ms) |
+|---|---|---|---|---|---|---|
+| minibox_nolimits | before | 30 | 3.994 | 5.733 | 9.242 | 9.654 |
+| minibox_limits | before | 30 | 32.124 | 21.922 | 33.828 | 64.452 |
+| minibox_nolimits | after | 30 | 4.064 | 5.643 | 8.903 | 16.835 |
+| minibox_limits | after | 30 | 3.770 | 4.836 | 8.449 | 8.590 |
+| minibox_limits_migrate | after | 30 | 16.529 | 19.888 | 34.005 | 65.394 |
+| minibox_veth_limits | before | 30 | 165.379 | 150.778 | 194.342 | 217.758 |
+| minibox_veth_limits | after | 30 | 115.321 | 122.097 | 165.732 | 166.501 |
+
+Startup of the other configurations in the after run (`bench/results/reference/startup_summary.csv`):
 
 | Configuration | n | min (ms) | median (ms) | mean (ms) | p95 (ms) | stdev (ms) |
 |---|---|---|---|---|---|---|
-| host_true | 30 | 1.454 | 1.716 | 1.982 | 3.640 | 0.703 |
-| unshare_ns | 30 | 3.527 | 3.893 | 4.364 | 8.377 | 1.567 |
-| minibox_nolimits | 30 | 3.439 | 3.994 | 5.733 | 9.242 | 2.448 |
-| minibox_limits | 30 | 3.506 | 32.124 | 21.922 | 33.828 | 16.043 |
-| minibox_veth_limits | 30 | 114.504 | 165.379 | 150.778 | 194.342 | 30.341 |
+| host_true | 30 | 1.391 | 1.913 | 1.913 | 2.347 | 0.279 |
+| unshare_ns | 30 | 3.505 | 3.948 | 4.491 | 8.708 | 1.563 |
 | docker | not measured: docker CLI not found | - | - | - | - | - |
+
+Caveats: WSL2 virtual machine, N=30, two separate runs hours apart, timings include Python `subprocess` overhead. `minibox exec` was not measured.
 
 Startup chart (bar = median, whisker = p95; **the y axis is a log scale**):
 
@@ -178,7 +199,7 @@ Limit enforcement (expected versus measured):
 
 ![Limit enforcement](bench/results/reference/limits.svg)
 
-Regenerate the tables with `python3 bench/make_report_tables.py bench/results/reference`.
+Startup chart, memory chart and limits chart above are from the after run (`bench/results/reference/`). Regenerate the tables with `python3 bench/make_report_tables.py bench/results/reference`.
 
 ## Documentation
 
@@ -188,3 +209,7 @@ See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md`, `docs/DEVLOG.md`, `docs/BENCHM
 - Zombies: solved opt-in with `--init`; the default is still no reaping. Without `--init` the user's command is PID 1 and never calls `wait()`, so orphaned
   processes that die, for example after a killed `minibox exec`, stay as zombies and a long-running container can accumulate them. They do not run;
   `cgroup.procs` does not list them, but `pids.current` counts them. Use `run --init` (a tiny reaping PID 1, like Docker's `--init`/`tini`) for containers that need it.
+- veth network setup costs a lot (a floor of about 114 ms per start, `bench/results/reference/`); the cause was not investigated.
+- `minibox exec` still joins the container's cgroup by writing `cgroup.procs` (migration); its start-up time was not measured.
+- No user namespace: container root is real root with full capabilities.
+- Not a hard security boundary: shared kernel, no seccomp, no capability dropping. Isolation for learning.

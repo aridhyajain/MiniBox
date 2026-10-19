@@ -22,6 +22,10 @@ Unit tests (standard `unittest`, no root) for `bench/stats.py`, `bench/make_char
 | `ReportTableTests.test_memory_table_divides_by_k` | per-container MiB = total / k / 1048576 (hand-checked fixture values); host row and docker note |
 | `ReportTableTests.test_incremental_and_limits` | incremental and limits tables, TIMEOUT row kept |
 | `ReportTableTests.test_pipe_in_text_is_escaped`, `test_machine_lines_and_full_report`, `test_main_rejects_missing_directory` | `\|` escaping; kernel/CPU/RAM/Docker lines and all sections; exit 1 for a missing directory |
+| `CompareTests.test_rows_and_order` | `--compare` prints the seven rows in the specified order (nolimits, limits before; nolimits, limits, migrate after; veth before, after) |
+| `CompareTests.test_values_come_from_the_right_directory` | each row carries n, median, mean, p95, max of the BEFORE or AFTER fixture, unchanged |
+| `CompareTests.test_missing_row_is_dashes_not_invented` | a configuration that is not measured becomes a row of `-` |
+| `CompareTests.test_main_compare`, `test_main_compare_errors` | exit 0 with output; exit 1 for a missing argument, a missing directory, a directory without `startup_summary.csv` (stdout captured, so the test run stays quiet) |
 
 ## System calls used and why
 Only file I/O in a temp directory.

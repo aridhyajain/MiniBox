@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 360" width="900" height="360" role="img" aria-label="Limit enforcement">
+<title>Limit enforcement</title>
+<style>
+  svg { --bg:#ffffff; --fg:#1f2328; --muted:#656d76; --grid:#d8dee4;
+        --c1:#2f6feb; --c2:#d4761a; --c3:#2c9a5b; --pass:#1a7f37; --fail:#cf222e; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --grid:#30363d;
+          --c1:#6ea0ff; --c2:#f0a050; --c3:#4cc38a; --pass:#3fb950; --fail:#ff7b72; }
+  }
+  .bg { fill:var(--bg); } text { fill:var(--fg); font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif; }
+  .title { font-size:18px; font-weight:600; } .sub { font-size:12px; fill:var(--muted); }
+  .axis, .tick { font-size:12px; fill:var(--muted); } .lbl { font-size:12px; }
+  .grid { stroke:var(--grid); stroke-width:1; } .whisk { stroke:var(--fg); stroke-width:2; fill:none; }
+  .c1 { fill:var(--c1); } .c2 { fill:var(--c2); } .c3 { fill:var(--c3); }
+  .pass { fill:var(--pass); font-weight:600; } .fail { fill:var(--fail); font-weight:600; }
+  .note { font-size:12px; font-style:italic; fill:var(--muted); }
+  .dash { stroke:var(--fg); stroke-width:1.5; stroke-dasharray:5 4; }
+</style>
+
+<rect class="bg" width="100%" height="100%"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Limit enforcement</text>
+<text x="24.0" y="50.0" class="sub" text-anchor="start">8 of 8 checks OK (expected vs measured, read from cgroup files)</text>
+<text x="24.0" y="80.0" class="axis" text-anchor="start" style="font-weight:600">Test</text>
+<text x="230.0" y="80.0" class="axis" text-anchor="start" style="font-weight:600">Expected</text>
+<text x="520.0" y="80.0" class="axis" text-anchor="start" style="font-weight:600">Measured</text>
+<text x="780.0" y="80.0" class="axis" text-anchor="start" style="font-weight:600">Result</text>
+<line class="grid" x1="16" x2="884" y1="88" y2="88"/>
+<text x="24.0" y="116.0" class="lbl" text-anchor="start">memory/exit_code</text>
+<text x="230.0" y="116.0" class="lbl" text-anchor="start">137 (OOM-killed)</text>
+<text x="520.0" y="116.0" class="lbl" text-anchor="start">137</text>
+<text x="780.0" y="116.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="124" y2="124"/>
+<text x="24.0" y="144.0" class="lbl" text-anchor="start">memory/oom_kill</text>
+<text x="230.0" y="144.0" class="lbl" text-anchor="start">&gt;= 1</text>
+<text x="520.0" y="144.0" class="lbl" text-anchor="start">3</text>
+<text x="780.0" y="144.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="152" y2="152"/>
+<text x="24.0" y="172.0" class="lbl" text-anchor="start">memory/peak_vs_limit</text>
+<text x="230.0" y="172.0" class="lbl" text-anchor="start">&lt;= 1.10 x 64 MiB</text>
+<text x="520.0" y="172.0" class="lbl" text-anchor="start">64.0 MiB</text>
+<text x="780.0" y="172.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="180" y2="180"/>
+<text x="24.0" y="200.0" class="lbl" text-anchor="start">memory/control_exceeds_64M</text>
+<text x="230.0" y="200.0" class="lbl" text-anchor="start">exit 0 and peak &gt; 64 MiB (limit raised to 1G</text>
+<text x="520.0" y="200.0" class="lbl" text-anchor="start">exit 0, peak 192.9 MiB</text>
+<text x="780.0" y="200.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="208" y2="208"/>
+<text x="24.0" y="228.0" class="lbl" text-anchor="start">pids/peak</text>
+<text x="230.0" y="228.0" class="lbl" text-anchor="start">&lt;= 20</text>
+<text x="520.0" y="228.0" class="lbl" text-anchor="start">20</text>
+<text x="780.0" y="228.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="236" y2="236"/>
+<text x="24.0" y="256.0" class="lbl" text-anchor="start">pids/fork_failure</text>
+<text x="230.0" y="256.0" class="lbl" text-anchor="start">fork refused for some of 60 children</text>
+<text x="520.0" y="256.0" class="lbl" text-anchor="start">yes</text>
+<text x="780.0" y="256.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="264" y2="264"/>
+<text x="24.0" y="284.0" class="lbl" text-anchor="start">cpu/ratio_at_0.5</text>
+<text x="230.0" y="284.0" class="lbl" text-anchor="start">0.40 - 0.60 CPU</text>
+<text x="520.0" y="284.0" class="lbl" text-anchor="start">0.508</text>
+<text x="780.0" y="284.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="292" y2="292"/>
+<text x="24.0" y="312.0" class="lbl" text-anchor="start">cpu/control_ratio</text>
+<text x="230.0" y="312.0" class="lbl" text-anchor="start">&gt; 0.80 CPU (limit 2 CPUs, one busy loop)</text>
+<text x="520.0" y="312.0" class="lbl" text-anchor="start">0.997</text>
+<text x="780.0" y="312.0" class="pass" text-anchor="start">✓ OK</text>
+<line class="grid" x1="16" x2="884" y1="320" y2="320"/>
+</svg>

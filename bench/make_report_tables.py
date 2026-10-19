@@ -2,6 +2,7 @@
 """make_report_tables.py - print Markdown tables for the report from a bench results directory.
 
 Usage: python3 bench/make_report_tables.py [RESULTS_DIR]     (default: bench/results/reference)
+       python3 bench/make_report_tables.py --compare BEFORE_DIR AFTER_DIR
 Standard library only, no root. Every number printed comes from the CSV / JSON files in RESULTS_DIR;
 values are copied as text from the files, except memory sizes, which are converted from bytes to MiB.
 """
@@ -111,7 +112,53 @@ def report(results_dir):
     return "\n\n".join(parts) + "\n"
 
 
+# (label in the table, which directory, config name in startup_summary.csv)
+COMPARE_ROWS = [
+    ("minibox_nolimits", "before", "minibox_nolimits"),
+    ("minibox_limits", "before", "minibox_limits"),
+    ("minibox_nolimits", "after", "minibox_nolimits"),
+    ("minibox_limits", "after", "minibox_limits"),
+    ("minibox_limits_migrate", "after", "minibox_limits_migrate"),
+    ("minibox_veth_limits", "before", "minibox_veth_limits"),
+    ("minibox_veth_limits", "after", "minibox_veth_limits"),
+]
+
+
+def compare_table(before_rows, after_rows):
+    """Before/after startup table. Values are copied as text from the two startup_summary.csv files;
+    a configuration missing from a file (or not measured) gets a row of '-' so nothing is invented."""
+    by_dir = {"before": {r["config"]: r for r in before_rows}, "after": {r["config"]: r for r in after_rows}}
+    out = []
+    for label, which, config in COMPARE_ROWS:
+        r = by_dir[which].get(config)
+        if r is None or r.get("status") != "measured":
+            out.append([label, which, "-", "-", "-", "-", "-"])
+        else:
+            out.append([label, which, r["n"], r["median_ms"], r["mean_ms"], r["p95_ms"], r["max_ms"]])
+    return table(["Configuration", "Run", "n", "median (ms)", "mean (ms)", "p95 (ms)", "max (ms)"], out)
+
+
+def compare_report(before_dir, after_dir):
+    """The compare output as one string."""
+    p = lambda d: os.path.join(d, "startup_summary.csv")  # noqa: E731
+    return ("### Startup time, before and after the clone3 change (ms, wall clock for `/bin/true`)\n\n"
+            + compare_table(read_csv(p(before_dir)), read_csv(p(after_dir))) + "\n")
+
+
 def main(argv):
+    if len(argv) > 1 and argv[1] == "--compare":
+        if len(argv) != 4:
+            print("usage: make_report_tables.py --compare BEFORE_DIR AFTER_DIR", file=sys.stderr)
+            return 1
+        for d in argv[2:4]:
+            if not os.path.isdir(d):
+                print("error: %s is not a directory" % d, file=sys.stderr)
+                return 1
+            if not os.path.exists(os.path.join(d, "startup_summary.csv")):
+                print("error: %s has no startup_summary.csv" % d, file=sys.stderr)
+                return 1
+        sys.stdout.write(compare_report(argv[2], argv[3]))
+        return 0
     results_dir = argv[1] if len(argv) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bench", "results", "reference")
     if not os.path.isdir(results_dir):

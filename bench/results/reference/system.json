@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-19T11:27:24+00:00",
+  "date": "2026-10-19T12:33:44+00:00",
   "kernel": "6.18.33.2-microsoft-standard-WSL2",
   "kernel_version": "#1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026",
   "cpu_model": "12th Gen Intel(R) Core(TM) i3-1215U",
@@ -16,10 +16,10 @@
   "runs_per_config": 30,
   "warmups": 3,
   "cpu_busy_seconds": 5,
-  "shuffle_seed": 1792409225,
+  "shuffle_seed": 1792413205,
   "docker": null,
   "docker_note": "docker CLI not found",
-  "minibox_build_time": "2026-10-19T09:56:32+00:00",
-  "minibox_sha256": "78fff6a9bdcf022ab4a6ab09b6bb1d2d8ed72a3b6826ed000be34de5db61c487",
-  "minibox_version": "build 2026-10-19T09:56:32+00:00 (sha256 78fff6a9bdcf)"
+  "minibox_build_time": "2026-10-19T12:20:40+00:00",
+  "minibox_sha256": "b8f5ef8dfdb6c12f961b339aef0aa0f9ac74418cb7bf9ded32ee0e76742f5cee",
+  "minibox_version": "build 2026-10-19T12:20:40+00:00 (sha256 b8f5ef8dfdb6)"
 }

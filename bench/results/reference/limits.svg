@@ -58,12 +58,12 @@
 <line class="grid" x1="16" x2="884" y1="264" y2="264"/>
 <text x="24.0" y="284.0" class="lbl" text-anchor="start">cpu/ratio_at_0.5</text>
 <text x="230.0" y="284.0" class="lbl" text-anchor="start">0.40 - 0.60 CPU</text>
-<text x="520.0" y="284.0" class="lbl" text-anchor="start">0.508</text>
+<text x="520.0" y="284.0" class="lbl" text-anchor="start">0.500</text>
 <text x="780.0" y="284.0" class="pass" text-anchor="start">✓ OK</text>
 <line class="grid" x1="16" x2="884" y1="292" y2="292"/>
 <text x="24.0" y="312.0" class="lbl" text-anchor="start">cpu/control_ratio</text>
 <text x="230.0" y="312.0" class="lbl" text-anchor="start">&gt; 0.80 CPU (limit 2 CPUs, one busy loop)</text>
-<text x="520.0" y="312.0" class="lbl" text-anchor="start">0.997</text>
+<text x="520.0" y="312.0" class="lbl" text-anchor="start">0.998</text>
 <text x="780.0" y="312.0" class="pass" text-anchor="start">✓ OK</text>
 <line class="grid" x1="16" x2="884" y1="320" y2="320"/>
 </svg>

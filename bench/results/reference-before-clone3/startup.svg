@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 478" width="960" height="478" role="img" aria-label="Startup time per configuration">
+<title>Startup time per configuration</title>
+<style>
+  svg { --bg:#ffffff; --fg:#1f2328; --muted:#656d76; --grid:#d8dee4;
+        --c1:#2f6feb; --c2:#d4761a; --c3:#2c9a5b; --pass:#1a7f37; --fail:#cf222e; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --grid:#30363d;
+          --c1:#6ea0ff; --c2:#f0a050; --c3:#4cc38a; --pass:#3fb950; --fail:#ff7b72; }
+  }
+  .bg { fill:var(--bg); } text { fill:var(--fg); font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif; }
+  .title { font-size:18px; font-weight:600; } .sub { font-size:12px; fill:var(--muted); }
+  .axis, .tick { font-size:12px; fill:var(--muted); } .lbl { font-size:12px; }
+  .grid { stroke:var(--grid); stroke-width:1; } .whisk { stroke:var(--fg); stroke-width:2; fill:none; }
+  .c1 { fill:var(--c1); } .c2 { fill:var(--c2); } .c3 { fill:var(--c3); }
+  .pass { fill:var(--pass); font-weight:600; } .fail { fill:var(--fail); font-weight:600; }
+  .note { font-size:12px; font-style:italic; fill:var(--muted); }
+  .dash { stroke:var(--fg); stroke-width:1.5; stroke-dasharray:5 4; }
+</style>
+
+<rect class="bg" width="100%" height="100%"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Startup time per configuration</text>
+<text x="24.0" y="50.0" class="sub" text-anchor="start">Log scale. Bar = median, whisker = p95 (lower is better). host_true n=30, unshare_ns n=30, minibox_nolimits n=30, minibox_limits n=30, minibox_veth_limits n=30</text>
+<line class="grid" x1="80" x2="920" y1="390.0" y2="390.0"/>
+<text x="72.0" y="394.0" class="tick" text-anchor="end">1</text>
+<line class="grid" x1="80" x2="920" y1="350.8" y2="350.8"/>
+<text x="72.0" y="354.8" class="tick" text-anchor="end">2</text>
+<line class="grid" x1="80" x2="920" y1="298.9" y2="298.9"/>
+<text x="72.0" y="302.9" class="tick" text-anchor="end">5</text>
+<line class="grid" x1="80" x2="920" y1="259.6" y2="259.6"/>
+<text x="72.0" y="263.6" class="tick" text-anchor="end">10</text>
+<line class="grid" x1="80" x2="920" y1="220.4" y2="220.4"/>
+<text x="72.0" y="224.4" class="tick" text-anchor="end">20</text>
+<line class="grid" x1="80" x2="920" y1="168.5" y2="168.5"/>
+<text x="72.0" y="172.5" class="tick" text-anchor="end">50</text>
+<line class="grid" x1="80" x2="920" y1="129.2" y2="129.2"/>
+<text x="72.0" y="133.2" class="tick" text-anchor="end">100</text>
+<line class="grid" x1="80" x2="920" y1="90.0" y2="90.0"/>
+<text x="72.0" y="94.0" class="tick" text-anchor="end">200</text>
+<text class="axis" transform="translate(16,240.0) rotate(-90)" text-anchor="middle">Wall-clock time to run /bin/true (ms, log scale)</text>
+<rect class="c1" x="118.5" y="359.4" width="63.0" height="30.6"/>
+<path class="whisk" d="M150.0 359.4 V316.8 M142.0 316.8 H158.0 M142.0 359.4 H158.0"/>
+<text x="150.0" y="308.8" class="tick" text-anchor="middle">1.7 ms (p95 3.6)</text>
+<text x="150.0" y="412.0" class="lbl" text-anchor="middle">host true</text>
+<rect class="c1" x="258.5" y="313.0" width="63.0" height="77.0"/>
+<path class="whisk" d="M290.0 313.0 V269.7 M282.0 269.7 H298.0 M282.0 313.0 H298.0"/>
+<text x="290.0" y="261.7" class="tick" text-anchor="middle">3.9 ms (p95 8.4)</text>
+<text x="290.0" y="412.0" class="lbl" text-anchor="middle">unshare ns</text>
+<rect class="c1" x="398.5" y="311.6" width="63.0" height="78.4"/>
+<path class="whisk" d="M430.0 311.6 V264.1 M422.0 264.1 H438.0 M422.0 311.6 H438.0"/>
+<text x="430.0" y="256.1" class="tick" text-anchor="middle">4.0 ms (p95 9.2)</text>
+<text x="430.0" y="412.0" class="lbl" text-anchor="middle">minibox nolimits</text>
+<rect class="c1" x="538.5" y="193.5" width="63.0" height="196.5"/>
+<path class="whisk" d="M570.0 193.5 V190.6 M562.0 190.6 H578.0 M562.0 193.5 H578.0"/>
+<text x="570.0" y="182.6" class="tick" text-anchor="middle">32.1 ms (p95 33.8)</text>
+<text x="570.0" y="412.0" class="lbl" text-anchor="middle">minibox limits</text>
+<rect class="c1" x="678.5" y="100.8" width="63.0" height="289.2"/>
+<path class="whisk" d="M710.0 100.8 V91.6 M702.0 91.6 H718.0 M702.0 100.8 H718.0"/>
+<text x="710.0" y="83.6" class="tick" text-anchor="middle">165.4 ms (p95 194.3)</text>
+<text x="710.0" y="412.0" class="lbl" text-anchor="middle">minibox veth limits</text>
+<text x="850.0" y="382.0" class="note" text-anchor="middle">not measured</text>
+<text x="850.0" y="412.0" class="lbl" text-anchor="middle">docker</text>
+<text x="24.0" y="448.0" class="note" text-anchor="start">Not measured - docker: not measured: docker CLI not found</text>
+</svg>

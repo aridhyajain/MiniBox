@@ -4,6 +4,8 @@ Run: python3 -m unittest tests/test_bench_stats.py -v     (from the repository r
 The chart tests use a tiny fixture written to a temp directory; the numbers in it are test data
 only, not benchmark results.
 """
+import contextlib
+import io
 import math
 import os
 import shutil
@@ -297,6 +299,68 @@ class ReportTableTests(unittest.TestCase):
 
     def test_main_rejects_missing_directory(self):
         self.assertEqual(make_report_tables.main(["x", os.path.join(self.dir, "nope")]), 1)
+
+class CompareTests(unittest.TestCase):
+    """make_report_tables --compare on two tiny fixtures (test data, not benchmark results)."""
+
+    BEFORE = """config,status,n,failed,min_ms,median_ms,mean_ms,p95_ms,max_ms,stdev_ms,note
+minibox_nolimits,measured,4,0,1.0,2.0,2.1,3.0,3.1,0.5,b
+minibox_limits,measured,4,0,1.1,20.0,18.0,30.0,31.0,9.0,b
+minibox_veth_limits,measured,4,0,100.0,150.0,140.0,190.0,191.0,30.0,b
+"""
+    AFTER = """config,status,n,failed,min_ms,median_ms,mean_ms,p95_ms,max_ms,stdev_ms,note
+minibox_nolimits,measured,5,0,1.2,2.2,2.3,3.2,3.3,0.6,a
+minibox_limits,measured,5,0,1.3,2.4,2.5,3.4,3.5,0.7,a
+minibox_limits_migrate,measured,5,0,1.4,16.0,17.0,34.0,35.0,8.0,a
+minibox_veth_limits,measured,5,0,100.5,110.0,112.0,120.0,121.0,5.0,a
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.before = os.path.join(self.tmp.name, "before")
+        self.after = os.path.join(self.tmp.name, "after")
+        for d, text in ((self.before, self.BEFORE), (self.after, self.AFTER)):
+            os.makedirs(d)
+            with open(os.path.join(d, "startup_summary.csv"), "w") as f:
+                f.write(text)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_rows_and_order(self):
+        out = make_report_tables.compare_report(self.before, self.after)
+        lines = [ln for ln in out.splitlines() if ln.startswith("| ") and "---" not in ln][1:]
+        self.assertEqual([ln.split(" | ")[0:2] for ln in lines], [
+            ["| minibox_nolimits", "before"], ["| minibox_limits", "before"],
+            ["| minibox_nolimits", "after"], ["| minibox_limits", "after"],
+            ["| minibox_limits_migrate", "after"], ["| minibox_veth_limits", "before"],
+            ["| minibox_veth_limits", "after"]])
+
+    def test_values_come_from_the_right_directory(self):
+        out = make_report_tables.compare_report(self.before, self.after)
+        self.assertIn("| minibox_limits | before | 4 | 20.0 | 18.0 | 30.0 | 31.0 |", out)
+        self.assertIn("| minibox_limits | after | 5 | 2.4 | 2.5 | 3.4 | 3.5 |", out)
+        self.assertIn("| minibox_limits_migrate | after | 5 | 16.0 | 17.0 | 34.0 | 35.0 |", out)
+        self.assertIn("| minibox_veth_limits | before | 4 | 150.0 | 140.0 | 190.0 | 191.0 |", out)
+        self.assertIn("| minibox_veth_limits | after | 5 | 110.0 | 112.0 | 120.0 | 121.0 |", out)
+
+    def test_missing_row_is_dashes_not_invented(self):
+        with open(os.path.join(self.after, "startup_summary.csv"), "w") as f:
+            f.write(self.AFTER.replace("minibox_limits_migrate,measured", "minibox_limits_migrate,not measured"))
+        out = make_report_tables.compare_report(self.before, self.after)
+        self.assertIn("| minibox_limits_migrate | after | - | - | - | - | - |", out)
+
+    def test_main_compare(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(make_report_tables.main(["x", "--compare", self.before, self.after]), 0)
+        self.assertIn("| minibox_limits | after |", out.getvalue())
+
+    def test_main_compare_errors(self):
+        self.assertEqual(make_report_tables.main(["x", "--compare", self.before]), 1)
+        self.assertEqual(make_report_tables.main(["x", "--compare", self.before, os.path.join(self.tmp.name, "no")]), 1)
+        empty = os.path.join(self.tmp.name, "empty")
+        os.makedirs(empty)
+        self.assertEqual(make_report_tables.main(["x", "--compare", self.before, empty]), 1)
 
 
 if __name__ == "__main__":

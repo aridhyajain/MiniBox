@@ -376,7 +376,7 @@ How it relates to other things: the same "PID 1 is special" rule is why `sleep 3
 **The fix was in the benchmark, not the runtime**: minibox behaves exactly like a real container runtime here. The benchmark now keeps a shell as PID 1, gives every call a timeout, and records `ERROR`/`TIMEOUT` rows instead of aborting.
 
 ## Phase 6 results – reading the numbers
-The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `bench/results/reference/`. Docker was not measured, so never quote a Docker figure.
+The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `bench/results/reference/` (after the clone3 change) and `bench/results/reference-before-clone3/` (before). Docker was not measured, so never quote a Docker figure.
 
 ### How to read the numbers
 - **Startup** is the time from launching the command to its exit, in milliseconds. Read the **median** (the typical run) first, then **p95** (the slow tail). Compare configurations as ratios.
@@ -384,26 +384,34 @@ The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `ben
 - **Limits** are expected-versus-measured pairs with a status; OK means the kernel behaved as expected.
 
 ### What to be able to explain about each chart
-- **`startup.svg`:** five bars (plain process, `unshare`, minibox without limits, with limits, with veth). The y axis is a **log scale**. Be able to say that the first three are close (so rootfs setup adds little on top of namespaces), that the limits bar is higher at the median but has the same minimum (observed, cause not investigated), and that veth is highest (likely the `ip` commands). The whisker is p95. Docker is shown as "not measured".
+- **`startup.svg`** (after run): six bars (plain process, `unshare`, minibox without limits, with limits via `clone3`, with limits via the old `cgroup.procs` path, with veth). The y axis is a **log scale**. Be able to say that the first four are close (rootfs setup and limits add little on top of namespaces: medians 1.913, 3.948, 4.064 and 3.770 ms), that the old-path bar is higher (median 16.529 ms, p95 34.005 ms) because of the cgroup migration stall, and that veth is highest (median 115.321 ms) with a floor of about 114 ms that was not investigated. The whisker is p95. Docker is shown as "not measured".
 - **`memory.svg`:** bars for 1, 5, 10 containers: cgroup memory, init PSS and monitor PSS, per container. Explain why init PSS falls as k grows, and that the total (cgroup + monitor) stays about the same. The dashed host `sleep` line is a different binary, so not a fair baseline.
 - **`limits.svg`:** a table of eight checks with expected, measured and status. Be able to say what each limit test did and which kernel file proves it.
 
 ### Likely viva questions
-**Why the median and not the mean?** A few slow runs pull the mean up (for `minibox_nolimits` the mean is 5.733 ms and the median 3.994 ms). The median is the typical run. We still show the mean and p95 because the slow runs matter too.
+**Why the median and not the mean?** A few slow runs pull the mean up (for `minibox_nolimits` in the after run the mean is 5.643 ms and the median 4.064 ms). The median is the typical run. We still show the mean and p95 because the slow runs matter too.
 
 **Why interleave the runs and warm up first?** The machine drifts (CPU speed, caches, other programs). Shuffling the runs spreads that drift over all configurations so it does not look like a difference between them. The first runs are slow because files are not cached yet; discarding warm-ups makes every measured run start from the same warm state.
 
-**Why a log scale on the startup chart?** The values range from 1.716 ms to 165.379 ms. On a linear axis the small bars would be invisible slivers. On a log axis, equal distances are equal ratios. The cost is that bar heights cannot be compared by eye as differences.
+**Why a log scale on the startup chart?** The medians range from 1.913 ms (`host_true`) to 115.321 ms (`minibox_veth_limits`) in the after run. On a linear axis the small bars would be invisible slivers. On a log axis, equal distances are equal ratios. The cost is that bar heights cannot be compared by eye as differences.
 
 **Why is the memory baseline not fair?** The host `sleep` is a different program (glibc, dynamically linked) from the container's `sleep` (busybox), so the difference says nothing about the container runtime. The fair figure is the minibox overhead: monitor process plus cgroup memory per container.
 
-**Why does PSS per container drop with more containers?** PSS divides each shared page (the busybox binary, libc) among the processes that share it. With one container its init pays for all of it (about 0.96 MiB); with ten it pays a tenth (about 0.15 MiB). The first container pays more of the shared cost. It is expected, not a measurement error.
+**Why does PSS per container drop with more containers?** PSS divides each shared page (the busybox binary, libc) among the processes that share it. With one container its init pays for all of it (0.97 MiB in the after run); with ten it pays a tenth (0.15 MiB). The first container pays more of the shared cost. It is expected, not a measurement error.
 
 **What does an OOM kill look like in `memory.events`?** The `oom_kill` counter is 1 or more (3 in the reference run), `memory.peak` stays at the limit (64.0 MiB for a 64M limit), and the container exits with code 137 (SIGKILL). The control run with a bigger limit exits 0, which shows the limit caused the kill.
 
-**Why is startup with veth slower?** The likely reason is that the setup runs several `ip` commands as separate processes and moves interfaces between network namespaces. This is the likely reason, not something we measured.
+**Why is startup with veth so much slower?** Median 115.321 ms in the after run (165.379 ms in the first run, which included the cgroup stall) against 3.770 ms with limits and no network. The minimum is 114.412 ms and was 114.504 ms in the first run, so about 114 ms is a floor that has nothing to do with cgroups. I did not investigate it. Hypotheses, not measured: the setup forks and executes several `ip` commands one after another, and the interfaces are moved between network namespaces.
 
-**Why was `minibox_limits` slow at the median when its minimum was the same?** In the reference run (before the clone3 change) most runs had an extra delay of roughly 30 ms. strace showed it was one write: the parent writing the child's PID into `cgroup.procs` (9-36 ms). See "Phase 8" below for the explanation and the fix.
+**Why didn't you fix the veth cost too?** The cgroup stall was a clear, understood problem with evidence (strace pointed at one write) and a small fix. For veth there is no measurement yet that says which part is slow, so a fix would be a guess. The next step would be to time each `ip` command; a likely fix is to talk netlink directly instead of running `ip`. It is future work and listed as a known limitation.
+
+**How did you find the bottleneck?** The benchmark showed the median with limits about eight times the median without (32.124 ms against 3.994 ms in the first run) while the minimum was the same (3.506 ms and 3.439 ms), so the setup work itself was not slower. Then `strace -f -ttt -T` showed the time is one write: the parent writing the child's PID to `cgroup.procs`. See Phase 8.
+
+**Why did you keep the old path (cgroup.procs migration)?** Compatibility: `clone3` with `CLONE_INTO_CGROUP` needs Linux 5.7 or newer and a seccomp filter may refuse it, so minibox falls back to the old path with one note. Comparison: with `MINIBOX_NO_CLONE3=1` one benchmark run measures both paths at the same time (`minibox_limits` against `minibox_limits_migrate`). Testing: `tests/clone3_test.sh` checks that both enforce the same limits. Also `minibox exec` still uses migration.
+
+**Why does the old path's median differ between runs?** 32.124 ms in the first run, 16.529 ms for the forced old path in the second; the p95 is nearly the same (33.828 ms and 34.005 ms). The runs form two groups, fast (under 10 ms) and slow (about 30 ms or more). In the first run 13 runs were fast and 17 took 30 ms or more, so the median is inside the slow group; in the second 13 were fast, 4 were in between and 13 took 30 ms or more, so the median falls between the groups. Why the share of slow runs differs between two runs hours apart is not known. The likely reason for the stall itself is a kernel grace-period wait of variable length, but that is a hypothesis; strace only shows that the time is spent in the write to `cgroup.procs`. This is why I quote p95 and max next to the median.
+
+**Is startup with limits now as fast as without?** Within noise: median 3.770 ms (p95 8.449 ms, max 8.590 ms) with limits and 4.064 ms (p95 8.903 ms, max 16.835 ms) without, in the same run.
 
 ## Phase 7 – the `--init` option (a tiny PID 1)
 
@@ -447,9 +455,8 @@ passed a safe point), and in a virtual machine like WSL2 that wait is long.
 
 ### How did strace find the delay?
 `strace -f -ttt -T` prints every system call with a timestamp (`-ttt`) and the time spent inside it (`-T`), and follows child processes (`-f`).
-I ran `minibox run --net none --memory 64M --cpus 0.5 --pids 20 -- /bin/true` five times under it. One call stood out each time: the parent's `write` of the child's PID
-to `cgroup.procs` took 10.6, 35.7, 8.7, 13.3 and 13.0 ms, while the child waited on the pipe. Every other syscall was fast. The run with limits took 26-57 ms in total against
-14-15 ms without a cgroup. So the benchmark's "32 ms with limits" was not mysterious slow setup work but this one write.
+I ran `minibox run --net none --memory 64M --cpus 0.5 --pids 20 -- /bin/true` several times under it. One call stood out each time: the parent's `write` of the child's PID
+to `cgroup.procs`, while the child waited on the pipe. Every other syscall was fast, and a run without limits (no cgroup) had no such call. So the slow start with limits was not slow setup work but this one write. (The strace timings are not in the benchmark result folders, so they are not quoted here; strace also slows every call. What strace shows for certain is *where* the time goes, not *why* the kernel is slow there.)
 
 ### What do `clone3` and `CLONE_INTO_CGROUP` do?
 `clone()` and `fork()` create a process. `clone3()` is the newer version of `clone()`: instead of one flags number it takes a struct, so it can carry more options.
@@ -460,13 +467,13 @@ the process was never anywhere else. So minibox now does: make the cgroup direct
 ### Why is the old path kept as a fallback?
 Not every system has `clone3`: an old kernel returns `ENOSYS`, and a sandbox (a container's seccomp filter) may refuse it with `EPERM`. Then minibox prints one note and uses the old
 `clone()` + write to `cgroup.procs`, which works everywhere. The same path is also reachable on purpose with `MINIBOX_NO_CLONE3=1`, so that the benchmark can show
-before and after in one run (`minibox_limits_migrate` against `minibox_limits`) and the tests can check that both paths give the same limits. `minibox exec` still uses the old way (it joins an existing container's cgroup) and so still pays the migration cost.
+before and after in one run (`minibox_limits_migrate` against `minibox_limits`) and the tests can check that both paths give the same limits. `minibox exec` still uses the old way (it joins an existing container's cgroup) and so probably still pays the migration cost; I did not measure `exec`. Future work: open the cgroup directory before `setns` and use `clone3` there too.
 
 ### How do I answer "how did you find this bottleneck?"
-"The benchmark showed that containers with limits had a median of 32 ms against 4 ms without, but the minimum was the same, so the setup work itself was not slower. I did not guess:
-I traced the run with `strace -f -ttt -T` and looked for the slowest syscall. It was the write of the PID to `cgroup.procs`, 9-36 ms in five runs, and nothing else was slow. The likely reason is that moving a running
-process between cgroups takes a kernel lock that can wait for an RCU grace period; I did not prove that part. The fix avoids the move: create the cgroup first and create the process inside it with
-`clone3(CLONE_INTO_CGROUP)`. I kept the old path as a fallback and as an environment switch so I can measure before and after, and I re-ran the benchmark to check." (Say "re-ran" only after the new reference run exists.)
+"The benchmark showed that containers with limits had a median of 32.124 ms against 3.994 ms without, but the minimum was the same, so the setup work itself was not slower. I did not guess:
+I traced the run with `strace -f -ttt -T` and looked for the slowest syscall. It was the write of the PID to `cgroup.procs`, and nothing else was slow. The likely reason (a hypothesis) is that moving a running
+process between cgroups takes a kernel lock that can wait for a grace period of variable length; I did not prove that part. The fix avoids the move: create the cgroup first and create the process inside it with
+`clone3(CLONE_INTO_CGROUP)`. I kept the old path as a fallback and as an environment switch so I can measure before and after, and I re-ran the benchmark: with limits the median is now 3.770 ms against 4.064 ms without, and the forced old path in the same run has a median of 16.529 ms and a p95 of 34.005 ms."
 
 ### Likely follow-up questions
 - *Is the new way safer or just faster?* Same limits, same files; one difference is that the container's own setup (hostname, mounts) is now accounted to its cgroup from the first instruction.

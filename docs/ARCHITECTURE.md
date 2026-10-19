@@ -150,7 +150,7 @@ unmounted. The rootfs is used in place, so changes persist (no overlay yet).
 ```
 Only created when `--memory`, `--cpus` or `--pids` is given. The cgroup and its limits are created first and the container is created
 directly inside it (`clone3` + `CLONE_INTO_CGROUP`), so limits apply from the child's first instruction and no cgroup migration happens.
-Why: writing a PID to `cgroup.procs` took 9-36 ms in strace (see `docs/BENCHMARKS.md`). Fallback: `clone()` and a PID write before the child is released;
+Why: writing a PID to `cgroup.procs` was the slow step in strace (see `docs/BENCHMARKS.md`). Fallback: `clone()` and a PID write before the child is released;
 `MINIBOX_NO_CLONE3=1` forces it (diagnostic switch for benchmarks/tests). `minibox exec` still joins by writing `cgroup.procs` and so still pays the migration. After exit: optional stats (`memory.peak`, `cpu.stat usage_usec`, `pids.peak`,
 `memory.events oom_kill`), OOM → exit 137, then the leaf is removed (`rmdir`, retried up to 1 s).
 
