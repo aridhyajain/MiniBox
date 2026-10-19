@@ -16,7 +16,7 @@ Single entry point for building, setup and test instructions.
 | `build/%.o` | compiles one source file | creates `build/` |
 | `check-env` | runs `scripts/check_env.sh` | non-zero exit if a check fails |
 | `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
-| `test` | builds, then prints the sudo commands for the test scripts (including `tests/init_test.sh`) | never runs sudo itself |
+| `test` | builds, then prints the sudo commands for the test scripts (including `tests/init_test.sh` and `tests/clone3_test.sh`) | never runs sudo itself |
 | `test-all` | builds, then prints `sudo bash tests/run_all.sh` (runs every test script, prints a summary) | never runs sudo itself |
 | `test-phase3` | builds, then prints `sudo tests/phase3_test.sh` | never runs sudo itself |
 | `test-phase4` | builds, then prints `sudo tests/phase4_test.sh` | never runs sudo itself |
@@ -24,6 +24,7 @@ Single entry point for building, setup and test instructions.
 | `test-phase5` | builds, then prints the commands for the UI tests (`scripts/setup_ui.sh`, `sudo tests/phase5_test.sh`, the unit tests) | never runs sudo itself |
 | `test-phase6` | builds, then prints `sudo bash tests/phase6_test.sh` | never runs sudo itself |
 | `test-init` | builds, then prints `sudo bash tests/init_test.sh` | never runs sudo itself |
+| `test-clone3` | builds, then prints `sudo bash tests/clone3_test.sh` | never runs sudo itself |
 | `test-bench` | runs `python3 -m unittest tests/test_bench_stats.py -v` (no root) | – |
 | `bench` | builds, then prints `sudo python3 bench/bench.py all` (full run, N=30) | prints only; never runs sudo itself |
 | `bench-quick` | builds, then prints `sudo python3 bench/bench.py all --quick` | prints only; never runs sudo itself |
@@ -52,6 +53,7 @@ make test-phase4
 make test-phase4b
 make test-phase5
 make test-init   # prints: sudo bash tests/init_test.sh
+make test-clone3 # prints: sudo bash tests/clone3_test.sh
 make ui-setup    # prints scripts/setup_ui.sh
 make ui-run      # prints sudo scripts/run_ui.sh 8080
 make test-all   # prints: sudo bash tests/run_all.sh

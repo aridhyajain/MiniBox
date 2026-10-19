@@ -12,6 +12,7 @@ Linux kernel primitives, without Docker.
 - **Phase 4b (implemented):** `exec` (`setns` into a running container, joining its cgroup), `tests/run_all.sh`.
 - **Phase 5 (implemented):** local web UI (Flask) that launches and manages containers by calling the CLI; token, Host check and loopback-only binding.
 - **Phase 6 (implemented):** benchmarks, charts, limit-enforcement checks.
+- **clone3 into the cgroup (implemented):** with limits, `box-<id>` and its limits are created *before* the container, which is then created inside it with `clone3(CLONE_INTO_CGROUP)`; `clone()` + `cgroup.procs` remains as fallback (`MINIBOX_NO_CLONE3=1` forces it).
 - **`--init` (implemented):** opt-in tiny PID 1 (`src/minit.c`) that forwards signals and reaps orphans.
 
 ## Modules
@@ -23,9 +24,10 @@ src/commands.c    cmd_run, cmd_ps, cmd_logs, cmd_stop, cmd_rm (own usage + argum
     |  monitor.c: run a container and record how it ended (foreground, or detached via fork+setsid)
     |  container_run(cfg)
     v
-src/container.c   mmap stack, pipes, clone(NEWPID|NEWUTS|NEWNS|NEWIPC|NEWNET), waitpid, on_started hook
+src/container.c   pipes, cgroup_create(id, limits), clone3(NEWPID|NEWUTS|NEWNS|NEWIPC|NEWNET|CLONE_INTO_CGROUP)
+    |             (fallback: mmap stack + clone() + cgroup_add_process), waitpid, on_started hook
     |  (in child)  rootfs_setup(rootfs), net_loopback_up(), net_set_ipv4()
-    |  (in parent) cgroup_setup(id, pid), net_veth_setup(pid, n), cleanup of both
+    |  (in parent) net_veth_setup(pid, n), cleanup of veth and cgroup
     v
 src/minit.c       `--init` only: runs as PID 1 inside the container, forks the command, forwards signals, reaps all children
 src/rootfs.c      private mounts, bind, /dev, pivot_root, /proc, /tmp
@@ -72,8 +74,9 @@ Child (inside the new namespaces; PID 1):
 5. on `'G'`: (veth) set `eth0` to 10.0.n.2/24 and up; `chdir("/")`, set `PATH`/`HOME`, `execvp(command)`
    (with `--init`: `minit_run(command)` instead, see below). On `'A'` or EOF: exit 1.
 
-Parent: (limits) check cgroup v2 before cloning; install SIGINT/SIGTERM handlers; `clone`; wait for `'R'`;
-(limits) create `box-<id>`, write limits, write the PID to `cgroup.procs`; (veth) create the pair, move the peer into the
+Parent: (limits) check cgroup v2; make the sync pipes; install SIGINT/SIGTERM handlers; (limits) **create `box-<id>` and write its limits before any
+process exists**; create the child with `clone3(..., CLONE_INTO_CGROUP)` so it is born inside the cgroup (no migration; on `ENOSYS`/`EPERM`/...
+or with `MINIBOX_NO_CLONE3=1`: `clone()` and, after `'R'`, write the PID to `cgroup.procs`); wait for `'R'`; (veth) create the pair, move the peer into the
 child's netns, configure the host end; write `'G'` (or `'A'` + SIGKILL if anything failed); call `on_started(pid)`; `waitpid`; delete the host veth
 if it still exists; (limits) `--stats`, OOM check (exit 137), `rmdir` the leaf; restore handlers;
 return the child's exit code (128+N for signal N). SIGINT/SIGTERM at any point kill the container and the same cleanup runs.
@@ -92,7 +95,7 @@ the monitor and `stop` see that code, so `stop` gives 143. The state file stores
 PID-namespace init (`NSpid` ends in 1). Details: `docs/src/minit.md`.
 
 ## exec: entering a running container (Phase 4b)
-`minibox exec <id|name> -- cmd...` does not create anything; it moves a new process into what `run` built:
+`minibox exec <id|name> -- cmd...` does not create a container; it moves a new process into what `run` built:
 ```
 minibox exec (host)                                   container (init = host PID P)
  1. state_find, status must be running, pid = P
@@ -145,8 +148,10 @@ unmounted. The rootfs is used in place, so changes persist (no overlay yet).
     └── box-<container id>/    one per container: memory.max, memory.swap.max=0, memory.oom.group=1,
                                cpu.max "<quota> 100000", pids.max, cgroup.procs
 ```
-Only created when `--memory`, `--cpus` or `--pids` is given. The PID is moved in before the child is released,
-so limits apply before `exec`. After exit: optional stats (`memory.peak`, `cpu.stat usage_usec`, `pids.peak`,
+Only created when `--memory`, `--cpus` or `--pids` is given. The cgroup and its limits are created first and the container is created
+directly inside it (`clone3` + `CLONE_INTO_CGROUP`), so limits apply from the child's first instruction and no cgroup migration happens.
+Why: writing a PID to `cgroup.procs` took 9-36 ms in strace (see `docs/BENCHMARKS.md`). Fallback: `clone()` and a PID write before the child is released;
+`MINIBOX_NO_CLONE3=1` forces it (diagnostic switch for benchmarks/tests). `minibox exec` still joins by writing `cgroup.procs` and so still pays the migration. After exit: optional stats (`memory.peak`, `cpu.stat usage_usec`, `pids.peak`,
 `memory.events oom_kill`), OOM → exit 137, then the leaf is removed (`rmdir`, retried up to 1 s).
 
 ## Web UI (Phase 5)

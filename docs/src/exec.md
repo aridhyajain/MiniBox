@@ -87,7 +87,7 @@ when the caller has no `TERM`.
 - `setns(fd, CLONE_NEW*)` – move the calling process into an existing namespace.
 - `fork`, `waitpid` – needed because a PID-namespace join only affects children; the parent also reports the status.
 - `fchdir`, `chroot`, `chdir` – put the process in the container's root directory.
-- `open`/`write` on `cgroup.procs` (through `cgroup_join_leaf`) – join the container's resource limits.
+- `open`/`write` on `cgroup.procs` (through `cgroup_join_leaf`) – join the container's resource limits. This is a cgroup *migration*: **`exec` still pays the migration cost** that `run` no longer pays (`run` creates the container inside its cgroup with `clone3`). `exec` could use the same technique (open the leaf before `setns`, replace `fork()` with `clone3(CLONE_INTO_CGROUP)`), but it has not been changed.
 - `sigaction`, `sigprocmask` – tty mode: ignore SIGINT/SIGQUIT in the waiting parent; group mode: handlers for SIGTERM/SIGINT/SIGHUP, blocked across `fork`.
 - `prctl(PR_SET_PDEATHSIG, SIGKILL)` – the kernel kills the command if `minibox exec` dies.
 - `getppid` – detect that the parent died before `prctl` ran (0 = parent alive and outside the PID namespace).

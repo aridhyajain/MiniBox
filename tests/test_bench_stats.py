@@ -6,6 +6,7 @@ only, not benchmark results.
 """
 import math
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,10 @@ import stats  # noqa: E402
 STARTUP = """config,status,n,failed,min_ms,median_ms,mean_ms,p95_ms,max_ms,stdev_ms,note
 host_true,measured,5,0,1.0,1.5,1.6,2.0,2.1,0.4,host
 minibox_nolimits,measured,5,0,20.0,25.0,26.0,31.0,32.0,4.0,mb
+minibox_limits,measured,5,0,3.5,4.1,4.3,5.0,5.2,0.6,clone3
+minibox_limits_migrate,measured,5,0,3.6,32.1,22.0,33.8,64.5,16.0,migrate
+minibox_veth_limits,measured,5,0,114.5,165.4,150.8,194.3,217.8,30.3,veth
+unshare_ns,measured,5,0,3.5,3.9,4.4,8.4,10.0,1.6,unshare
 docker,not measured,0,0,,,,,,,not measured: docker CLI not found
 """
 MEMORY = """config,k,cgroup_memory_current_total,init_mem_total,monitor_or_shim_mem_total,total_bytes,per_container_bytes,note
@@ -73,6 +78,34 @@ class StatsTests(unittest.TestCase):
     def test_incremental_cost(self):
         self.assertAlmostEqual(stats.incremental_cost([(1, 150), (5, 550), (10, 1050)]), 100.0)
         self.assertIsNone(stats.incremental_cost([(1, 5)]))
+
+
+class StartupConfigTests(unittest.TestCase):
+    """The clone3 before/after rows of the startup benchmark (no root needed: argv only)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        args = bench.parse_args(["startup", "--quick", "--out", self.tmp.name])
+        self.b = bench.Bench(args)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        shutil.rmtree(self.b.state_dir, ignore_errors=True)
+
+    def test_migrate_row_follows_limits_row_with_the_same_command(self):
+        cfgs = bench.startup_configs(self.b)
+        names = list(cfgs)
+        self.assertEqual(names.index("minibox_limits_migrate"), names.index("minibox_limits") + 1)
+        self.assertEqual(cfgs["minibox_limits"][0], cfgs["minibox_limits_migrate"][0])
+        self.assertIn("MINIBOX_NO_CLONE3", cfgs["minibox_limits_migrate"][1])
+        self.assertEqual(len(names), 7)
+
+    def test_only_the_migrate_row_gets_the_switch(self):
+        base = {"PATH": "/bin", "MINIBOX_STATE_DIR": "/x"}
+        self.assertEqual(bench.startup_env(base, "minibox_limits_migrate")["MINIBOX_NO_CLONE3"], "1")
+        for name in ("minibox_limits", "minibox_nolimits", "minibox_veth_limits", "host_true"):
+            self.assertEqual(bench.startup_env(base, name), base)
+        self.assertNotIn("MINIBOX_NO_CLONE3", base)         # the base environment is not modified
 
 
 class WorkloadTests(unittest.TestCase):
@@ -159,6 +192,39 @@ class ChartTests(unittest.TestCase):
         self.assertIn("log scale", svg)
         self.assertIn("1.5 ms (p95 2.0)", svg)
 
+    def test_seven_startup_labels_do_not_overlap_and_fit(self):
+        rows = make_charts.read_csv(os.path.join(self.dir, "startup_summary.csv"))
+        self.assertEqual(len(rows), 7)
+        svg = make_charts.startup_svg(rows)
+        root = ET.fromstring(svg.split("?>", 1)[1])
+        ns = "{http://www.w3.org/2000/svg}"
+        width = float(root.get("width"))
+        by_row = {}
+        for e in root.iter(ns + "text"):
+            if e.get("class") not in ("tick", "lbl") or e.get("text-anchor") != "middle":
+                continue
+            x, y = float(e.get("x")), float(e.get("y"))
+            half = len(e.text) * make_charts.CHAR_W / 2
+            self.assertGreaterEqual(x - half, 0, e.text)
+            self.assertLessEqual(x + half, width, e.text)
+            by_row.setdefault(round(y), []).append((x - half, x + half, e.text))
+        self.assertTrue(by_row)
+        for spans in by_row.values():
+            spans.sort()
+            for (_, end, a), (start, _, b) in zip(spans, spans[1:]):
+                self.assertLess(end, start, "%s overlaps %s" % (a, b))
+        self.assertIn("minibox limits", svg)
+        self.assertIn("migrate", svg)
+
+    def test_wrap_label_and_n_summary(self):
+        self.assertEqual(make_charts.wrap_label("minibox_limits_migrate"), ["minibox limits", "migrate"])
+        self.assertEqual(make_charts.wrap_label("minibox_veth_limits"), ["minibox veth", "limits"])
+        self.assertEqual(make_charts.wrap_label("docker"), ["docker"])
+        same = [{"config": "a", "n": "30"}, {"config": "b", "n": "30"}]
+        self.assertEqual(make_charts.n_summary(same), "n=30 per configuration")
+        self.assertEqual(make_charts.n_summary([{"config": "a", "n": "5"}, {"config": "b", "n": "4"}]),
+                         "a n=5, b n=4")
+
     def test_legend_entries_do_not_overlap(self):
         labels = ["minibox cgroup memory.current", "minibox init PSS", "minibox monitor PSS",
                   "host sleep PSS (dashed line)"]
@@ -192,6 +258,11 @@ class ReportTableTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_startup_table_has_the_migrate_row(self):
+        out = make_report_tables.startup_table(make_charts.read_csv(os.path.join(self.dir, "startup_summary.csv")))
+        self.assertIn("| minibox_limits | 5 | 3.5 | 4.1 | 4.3 | 5.0 | 0.6 |", out)
+        self.assertIn("| minibox_limits_migrate | 5 | 3.6 | 32.1 | 22.0 | 33.8 | 16.0 |", out)
 
     def test_startup_table_copies_file_values(self):
         out = make_report_tables.startup_table(make_charts.read_csv(os.path.join(self.dir, "startup_summary.csv")))

@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c src/minit.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-bench bench bench-quick charts ui-setup ui-run demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick charts ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -36,6 +36,7 @@ test: $(TARGET)
 	@echo "  sudo tests/phase4b_test.sh"
 	@echo "  sudo tests/phase5_test.sh     (needs 'make ui-setup' first)"
 	@echo "  sudo bash tests/init_test.sh"
+	@echo "  sudo bash tests/clone3_test.sh"
 	@echo "or all of them in one go:  make test-all"
 
 # One command for every test script (runs them all, prints a summary).
@@ -54,6 +55,10 @@ test-phase4: $(TARGET)
 test-init: $(TARGET)
 	@echo "The --init tests need root. Run:"
 	@echo "  sudo bash tests/init_test.sh"
+
+test-clone3: $(TARGET)
+	@echo "The clone3 / cgroup start-up tests need root. Run:"
+	@echo "  sudo bash tests/clone3_test.sh"
 
 test-phase4b: $(TARGET)
 	@echo "Phase 4b tests need root. Run:"

@@ -15,6 +15,8 @@ import sys
 from xml.sax.saxutils import escape
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MIN_STARTUP_SLOT = 150          # px per startup bar, so 7 configurations do not overlap
+CHAR_W = 7.0                    # estimated width of one 12 px character
 
 STYLE = """
 <style>
@@ -128,6 +130,25 @@ def bar_label(med, p95):
     return "%.1f ms (p95 %.1f)" % (med, p95)
 
 
+def wrap_label(name, max_chars=16):
+    """Split a configuration name at its underscores into lines of at most max_chars characters."""
+    lines = []
+    for word in name.split("_"):
+        if lines and len(lines[-1]) + 1 + len(word) <= max_chars:
+            lines[-1] += " " + word
+        else:
+            lines.append(word)
+    return lines
+
+
+def n_summary(measured):
+    """'n=30 per configuration' when every n is equal, else 'name n=..' for each (long, but rare)."""
+    ns = {r["n"] for r in measured}
+    if len(ns) == 1:
+        return "n=%s per configuration" % ns.pop()
+    return ", ".join("%s n=%s" % (r["config"], r["n"]) for r in measured)
+
+
 def startup_svg(rows):
     """Bar = median startup time on a log axis, whisker up to p95. Not-measured configs get a note."""
     measured = [r for r in rows if r.get("status") == "measured" and num(r.get("median_ms")) is not None]
@@ -135,14 +156,16 @@ def startup_svg(rows):
     p95s = [num(r.get("p95_ms")) or num(r["median_ms"]) for r in measured] or [10.0]
     meds = [num(r["median_ms"]) for r in measured] or [1.0]
     ticks = log_ticks(min(meds), max(p95s))
-    width, left, top, w, h = 960, 80, 90, 840, 300
+    # at least 150 px per bar: "164.4 ms (p95 194.3)" is about 140 px wide, so neighbours never touch
+    left, top, h = 80, 90, 300
+    w = max(840, MIN_STARTUP_SLOT * len(rows))
+    width = left + w + 40
     slot = w / max(len(rows), 1)
     axis, pos = y_axis(left, top, w, h, ticks, "Wall-clock time to run /bin/true (ms, log scale)", log=True)
     body = axis
     base = top + h
     for i, r in enumerate(rows):
         cx = left + slot * (i + 0.5)
-        label = r["config"].replace("_", " ")
         if r in measured:
             med, p95 = num(r["median_ms"]), num(r.get("p95_ms")) or num(r["median_ms"])
             bw = slot * 0.45
@@ -154,11 +177,12 @@ def startup_svg(rows):
             body.append(t(cx, yp - 8, bar_label(med, p95), "tick", "middle"))
         else:
             body.append(t(cx, base - 8, "not measured", "note", "middle"))
-        body.append(t(cx, base + 22, label, "lbl", "middle"))
+        for k, line in enumerate(wrap_label(r["config"])):
+            body.append(t(cx, base + 22 + 16 * k, line, "lbl", "middle"))
     notes = ["%s: %s" % (r["config"], r.get("note", "not measured")) for r in missing]
     for j, n in enumerate(notes):
         body.append(t(24, base + 58 + 16 * j, "Not measured - " + n, "note"))
-    n_txt = ", ".join("%s n=%s" % (r["config"], r["n"]) for r in measured)
+    n_txt = n_summary(measured)
     height = base + 72 + 16 * len(notes)
     return wrap(width, height, "Startup time per configuration",
                 "Log scale. Bar = median, whisker = p95 (lower is better). " + n_txt, "\n".join(body))

@@ -1,13 +1,22 @@
 /*
- * container.c - create the container process with clone() and wait for it.
+ * container.c - create the container process (clone3 or clone) and wait for it.
  *
  * OS concept: clone() is fork() with flags. Each CLONE_NEW* flag gives the
  * child a private copy of one kernel resource view (namespace).
  *
+ * Start-up order with limits: the parent first creates the cgroup and writes
+ * its limits, then creates the container process directly INSIDE it with
+ * clone3(CLONE_INTO_CGROUP) (Linux 5.7+). That avoids moving a running task
+ * between cgroups (writing cgroup.procs), which measured 9-36 ms. If clone3 is
+ * unavailable, or MINIBOX_NO_CLONE3=1 is set (a diagnostic switch for
+ * benchmarks and tests), the old path is used: clone(), then the parent writes
+ * the child's PID to cgroup.procs while the child waits.
+ *
  * Parent/child handshake: some setup needs the child's host PID and must
- * finish before the child runs its command: moving it into its cgroup (so
- * limits apply from the first instruction) and, with --net veth, moving one
- * veth end into its network namespace. Two pipes synchronise them:
+ * finish before the child runs its command: on the fallback path moving it
+ * into its cgroup (so limits apply before the first instruction of the
+ * command) and, with --net veth, moving one veth end into its network
+ * namespace. Two pipes synchronise them:
  *     ready: child -> parent  'R'  "my own setup is done"
  *     go:    parent -> child  'G'  "cgroup + network ready, exec now"
  *                             'A'  "setup failed, give up"
@@ -28,14 +37,41 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #define STACK_SIZE (1024 * 1024)
+
+/* Older headers may lack these (clone3 is Linux 5.3+, CLONE_INTO_CGROUP 5.7+). */
+#ifndef CLONE_INTO_CGROUP
+#define CLONE_INTO_CGROUP 0x200000000ULL
+#endif
+#ifndef SYS_clone3
+#define SYS_clone3 435              /* same number on every architecture */
+#endif
+
+/* The namespaces every container gets, for both clone() and clone3(). */
+#define NS_FLAGS (CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | \
+                  CLONE_NEWIPC | CLONE_NEWNET)
+
+#define ENV_NO_CLONE3 "MINIBOX_NO_CLONE3"
+#define SPAWN_FALLBACK (-2)         /* start_child internal: use clone() instead */
+
+/*
+ * struct clone_args of <linux/sched.h> (kernel ABI, version 2 = 88 bytes, all
+ * fields 64 bit). Our own copy: no dependency on the installed headers.
+ */
+struct mb_clone_args {
+    uint64_t flags, pidfd, child_tid, parent_tid, exit_signal;
+    uint64_t stack, stack_size, tls, set_tid, set_tid_size, cgroup;
+};
+_Static_assert(sizeof(struct mb_clone_args) == 88, "clone_args v2 is 88 bytes");
 
 #define MSG_READY 'R'
 #define MSG_GO    'G'
@@ -336,19 +372,20 @@ static int release_child(struct sync_pipes *p, int setup_ok)
 }
 
 /*
- * Everything the parent does between clone() and releasing the child:
- * wait for 'R', put the child in its cgroup, set up veth.
+ * Everything the parent does between creating the child and releasing it:
+ * wait for 'R', (fallback path only) put the child in its cgroup, set up veth.
+ * in_cgroup: the child was created inside the cgroup, nothing to move.
  * *child_died is set if the child exited before saying 'R'.
  */
 static int parent_setup(const struct container_config *cfg, pid_t pid,
-                        struct sync_pipes *p, struct cgroup *cg, int *child_died)
+                        struct sync_pipes *p, const struct cgroup *cg,
+                        int in_cgroup, int *child_died)
 {
     if (parent_wait_ready(p->ready[0]) == -1) {
         *child_died = !stop_signal;
         return -1;
     }
-    if (cgroup_limits_set(&cfg->limits) &&
-        cgroup_setup(cg, cfg->id, pid, &cfg->limits) == -1) {
+    if (cg->created && !in_cgroup && cgroup_add_process(cg, pid) == -1) {
         fprintf(stderr, "minibox: cgroup setup failed; container stopped\n");
         return -1;
     }
@@ -393,17 +430,16 @@ static void report_early_exit(int child_died, int result)
 }
 
 /*
- * Parent side after clone(): setup, release, wait, clean up.
+ * Parent side after the child exists: setup, release, wait, clean up.
  * Cleanup (veth, cgroup) runs on every path.
  */
 static int supervise(const struct container_config *cfg, pid_t pid,
-                     struct sync_pipes *pipes)
+                     struct sync_pipes *pipes, struct cgroup *cg, int in_cgroup)
 {
-    struct cgroup cg = { "", 0 };
     int result, setup_failed, child_died = 0;
 
     close_fd(&pipes->ready[1]);   /* so EOF on ready[0] means "child gone" */
-    setup_failed = parent_setup(cfg, pid, pipes, &cg, &child_died) == -1;
+    setup_failed = parent_setup(cfg, pid, pipes, cg, in_cgroup, &child_died) == -1;
     if (release_child(pipes, !setup_failed) == -1)
         setup_failed = 1;
     close_pipes(pipes);
@@ -417,8 +453,150 @@ static int supervise(const struct container_config *cfg, pid_t pid,
     report_early_exit(child_died, result);
     if (cfg->net == NET_VETH)
         net_veth_cleanup(pid);    /* also covers a failed setup */
-    result = finish_cgroup(cfg, &cg, result);
+    result = finish_cgroup(cfg, cg, result);
     return setup_failed ? -1 : result;
+}
+
+/* ----------------------------- creating the child ----------------------------- */
+
+/* Diagnostic switch: MINIBOX_NO_CLONE3=1 forces the clone() + cgroup.procs path. */
+static int clone3_disabled(void)
+{
+    const char *v = getenv(ENV_NO_CLONE3);
+
+    return v != NULL && strcmp(v, "1") == 0;
+}
+
+/*
+ * Which clone3 failures mean "this kernel/sandbox does not offer it" (ENOSYS
+ * old kernel, EINVAL/E2BIG unknown flag or size, EPERM seccomp filter, ...)?
+ * Everything except EAGAIN/ENOMEM: those are real resource limits that the
+ * clone() fallback would hit as well, so they are reported, not retried.
+ */
+static int clone3_should_fall_back(int err)
+{
+    return err != EAGAIN && err != ENOMEM;
+}
+
+/*
+ * OS concept: clone3() takes a struct instead of a flag word, and one flag,
+ * CLONE_INTO_CGROUP, creates the child directly in the cgroup whose directory
+ * descriptor is in args.cgroup: no migration afterwards. Like fork() it has no
+ * function or stack argument: the child continues here, on a copy of our stack.
+ * Returns the child's PID in the parent, -1 (errno set) on failure; the child
+ * never returns.
+ */
+static pid_t spawn_clone3(struct child_args *args, int cgroup_fd)
+{
+    struct mb_clone_args ca;
+    long pid;
+
+    memset(&ca, 0, sizeof(ca));
+    ca.flags = (uint64_t)NS_FLAGS | CLONE_INTO_CGROUP;
+    ca.exit_signal = SIGCHLD;       /* termination signals the parent like fork() */
+    ca.cgroup = (uint64_t)cgroup_fd;
+    pid = syscall(SYS_clone3, &ca, sizeof(ca));
+    if (pid == 0) {
+        /* --init's PID 1 never execs, so CLOEXEC alone would leak this fd into it */
+        close(cgroup_fd);
+        _exit(child_main(args));
+    }
+    return (pid_t)pid;
+}
+
+/*
+ * The leaf cgroup must exist. Returns the PID, SPAWN_FALLBACK if clone3 is not
+ * available here (note printed), or -1 on a real error. Always closes the fd.
+ */
+static pid_t spawn_into_cgroup(struct child_args *args, const struct cgroup *cg)
+{
+    int fd = cgroup_open_dir(cg), saved;
+    pid_t pid;
+
+    if (fd == -1)
+        return -1;
+    pid = spawn_clone3(args, fd);
+    saved = errno;
+    close(fd);
+    if (pid != -1)
+        return pid;
+    if (!clone3_should_fall_back(saved)) {
+        errno = saved;
+        perror("clone3");
+        return -1;
+    }
+    fprintf(stderr, "minibox: clone3 unavailable (%s); using clone() + cgroup.procs\n",
+            strerror(saved));
+    return SPAWN_FALLBACK;
+}
+
+/* The classic path: our own stack, clone() runs child_main on it. */
+static pid_t spawn_clone(struct child_args *args, void **stack_base)
+{
+    void *stack_top;
+    pid_t pid;
+
+    *stack_base = alloc_stack(&stack_top);
+    if (*stack_base == NULL)
+        return -1;
+    /* SIGCHLD makes the child's termination signal the parent like fork(). */
+    pid = clone(child_main, stack_top, NS_FLAGS | SIGCHLD, args);
+    if (pid == -1)
+        perror("clone");
+    return pid;
+}
+
+/*
+ * Create the container process. *in_cgroup is set if it was born inside the
+ * cgroup; *stack_base is set (caller munmaps) only on the clone() path.
+ */
+static pid_t start_child(struct child_args *args, const struct cgroup *cg,
+                         int *in_cgroup, void **stack_base)
+{
+    pid_t pid;
+
+    *in_cgroup = 0;
+    *stack_base = NULL;
+    if (cg->created && !clone3_disabled()) {
+        pid = spawn_into_cgroup(args, cg);
+        if (pid != SPAWN_FALLBACK) {
+            *in_cgroup = pid > 0;
+            return pid;
+        }
+    }
+    return spawn_clone(args, stack_base);
+}
+
+/* With handlers installed: create the cgroup, then the child, then supervise it. */
+static int launch(const struct container_config *cfg, struct child_args *args,
+                  struct cgroup *cg)
+{
+    void *stack_base;
+    int in_cgroup, result = -1;
+    pid_t pid;
+
+    if (cgroup_limits_set(&cfg->limits) &&
+        cgroup_create(cg, cfg->id, &cfg->limits) == -1) {
+        fprintf(stderr, "minibox: cgroup setup failed\n");
+        cgroup_remove(cg);          /* the directory may exist without all limits */
+        return -1;
+    }
+    if (stop_signal) {
+        fprintf(stderr, "minibox: received %s, container not started\n",
+                strsignal(stop_signal));
+        cgroup_remove(cg);
+        return -1;
+    }
+    pid = start_child(args, cg, &in_cgroup, &stack_base);
+    if (pid == -1) {
+        cgroup_remove(cg);
+    } else {
+        target_pid = pid;
+        result = supervise(cfg, pid, args->pipes, cg, in_cgroup);
+    }
+    if (stack_base != NULL && munmap(stack_base, STACK_SIZE) == -1)
+        perror("munmap(child stack)");
+    return result;
 }
 
 int container_run(const struct container_config *cfg)
@@ -426,9 +604,7 @@ int container_run(const struct container_config *cfg)
     struct sync_pipes pipes;
     struct child_args args = { cfg, &pipes };
     struct saved_signals old_signals;
-    void *stack_top;
-    void *stack_base;
-    pid_t pid;
+    struct cgroup cg = { "", 0 };
     int result = -1;
 
     /* fail before creating anything if limits were asked for but impossible */
@@ -436,27 +612,10 @@ int container_run(const struct container_config *cfg)
         return -1;
     if (make_sync_pipes(&pipes) == -1)
         return -1;
-    stack_base = alloc_stack(&stack_top);
-    if (stack_base == NULL) {
-        close_pipes(&pipes);
-        return -1;
-    }
     if (install_stop_handlers(&old_signals) == 0) {
-        /* SIGCHLD makes the child's termination signal the parent like fork(). */
-        pid = clone(child_main, stack_top,
-                    CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS |
-                    CLONE_NEWIPC | CLONE_NEWNET | SIGCHLD,
-                    &args);
-        if (pid == -1) {
-            perror("clone");
-        } else {
-            target_pid = pid;
-            result = supervise(cfg, pid, &pipes);
-        }
+        result = launch(cfg, &args, &cg);
         restore_handlers(&old_signals);
     }
     close_pipes(&pipes);
-    if (munmap(stack_base, STACK_SIZE) == -1)
-        perror("munmap(child stack)");
     return result;
 }

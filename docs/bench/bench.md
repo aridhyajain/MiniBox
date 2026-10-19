@@ -33,6 +33,7 @@ When started through `sudo`, result files are `chown`ed back to the invoking use
 | `proc_mem_bytes(pid)` | host PID | `(bytes, "pss"/"rss"/"none")` | PSS from `/proc/<pid>/smaps_rollup`, fallback `VmRSS` |
 | `parent_pid(pid)`, `pid_cgroup_dir(pid)`, `cgroup_memory_current(path)` | – | PPID (docker shim), cgroup directory of a PID, `memory.current` or `None` | – |
 | `timed(argv, env, timeout=20)` | command | `(elapsed_ns, returncode)`; returncode `-999` on timeout | `time.perf_counter_ns` around `subprocess.run`, stdio to `/dev/null`; a timeout is recorded as `TIMEOUT:`, the container killed, the run continues |
+| `startup_env(base_env, name)` | environment dict, configuration name | copy of the environment plus the configuration's extra variables (`STARTUP_EXTRA_ENV`) | only `minibox_limits_migrate` gets `MINIBOX_NO_CLONE3=1`; set through `subprocess`'s `env=`, so no extra `env` process distorts the timing |
 | `startup_configs(b)` | – | ordered dict name to (argv or `None`, note) | `None` = not measured |
 | `bench_startup(b)` | – | – | warm-ups, shuffled interleaved runs, two CSVs |
 | `measure_minibox_memory`, `measure_host_memory`, `measure_docker_memory` `(b, k)` | k containers | `[cgroup_total, init_total, monitor_or_shim_total, total, kinds]` | start k `sleep 300`, sample, caller cleans up |
@@ -45,7 +46,7 @@ When started through `sudo`, result files are `chown`ed back to the invoking use
 | `system_info(b, sections)`, `chown_tree`, `publish_latest`, `main` | – | – | see above |
 
 ## Configurations (A) and workloads (B, C)
-1. `host_true`: `/bin/true` on the host. 2. `unshare_ns`: `unshare --fork --pid --mount-proc --uts --ipc --net true`. 3. `minibox_nolimits`: `--net none`. 4. `minibox_limits`: `--net none --memory 256M --cpus 1 --pids 64`. 5. `minibox_veth_limits`: same with `--net veth`. 6. `docker`: `docker run --rm --network none alpine /bin/true`, or "not measured".
+1. `host_true`: `/bin/true` on the host. 2. `unshare_ns`: `unshare --fork --pid --mount-proc --uts --ipc --net true`. 3. `minibox_nolimits`: `--net none`. 4. `minibox_limits`: `--net none --memory 256M --cpus 1 --pids 64` (the container is created inside its cgroup with `clone3`). 5. `minibox_limits_migrate`: **the same command** with `MINIBOX_NO_CLONE3=1`, i.e. the old path (`clone()`, then the parent writes `cgroup.procs`, a cgroup migration): the "before" of the clone3 fix, so one run shows before and after. 6. `minibox_veth_limits`: same limits with `--net veth`. 7. `docker`: `docker run --rm --network none alpine /bin/true`, or "not measured".
 B: `--memory 1G` is given so a cgroup (and `memory.current`) exists; the monitor process is outside that cgroup, so the total is `memory.current + monitor PSS`. PSS of the init is part of `memory.current` already, so it is shown but not added.
 C: memory: `awk 'BEGIN{s="x"; while(1) s=s s}'` with `--memory 64M`; control: a bounded awk (2^27 characters) with `--memory 1G`. pids: 60 background `sleep 5` with `--pids 20`; fork failure = the script did not reach `started_all`, or stderr mentions a fork error. cpu: `timeout N sh -c 'while :; do :; done'` with `--cpus 0.5` (ratio = `usage_usec` / wall time of the whole `minibox run`, so setup time makes it slightly low); control `--cpus 2` (or the core count if smaller), expects > 0.8.
 

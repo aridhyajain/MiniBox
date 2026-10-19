@@ -15,7 +15,7 @@ A configuration that was not measured (docker) appears as a row with the reason 
 | `cell(text)` | any value | text safe for a Markdown cell (`\|` escaped, newlines removed, `None` becomes empty) | – |
 | `table(header, rows)` | list of column names, list of row lists | Markdown table string | – |
 | `mib(value_bytes, divisor=1)` | bytes (text or number), optional divisor (k) | `bytes / divisor / 1048576` with 2 decimals, or `-` if missing | – |
-| `startup_table(rows)` | rows of `startup_summary.csv` | table; a row whose `status` is not `measured` shows its note | – |
+| `startup_table(rows)` | rows of `startup_summary.csv` | table, one row per configuration in file order (including `minibox_limits_migrate`); a row whose `status` is not `measured` shows its note | – |
 | `memory_table(rows)` | rows of `memory.csv` | table of cgroup, init PSS, monitor PSS (each total divided by k), total / k in MiB and bytes; rows without `k` show the note | – |
 | `incremental_table(incr)` | rows of `memory_incremental.csv` | table of bytes and MiB per extra container | – |
 | `limits_table(rows)` | rows of `limits.csv` | table check / expected / measured / status | – |

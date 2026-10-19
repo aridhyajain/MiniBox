@@ -46,6 +46,11 @@ Without limits no cgroup is created. An OOM-killed container exits with 137. `--
 `--net none` gives only a loopback interface; `--net veth` adds a veth pair to the host (needs the host `ip` command).
 Every veth container gets its own subnet `10.0.n.0/24` (the lowest free `n`), so several can run at once.
 
+### Limits and start-up: `clone3` into the cgroup
+With `--memory`, `--cpus` or `--pids`, minibox creates `/sys/fs/cgroup/minibox/box-<id>` and writes the limits first, then creates the container directly inside it with `clone3(CLONE_INTO_CGROUP)` (Linux 5.7+),
+so the kernel never has to move a running process between cgroups (that move took 9-36 ms). If `clone3` is unavailable (old kernel, seccomp), minibox falls back to `clone()` and writing the PID to `cgroup.procs` and prints one note.
+**Diagnostic switch:** `MINIBOX_NO_CLONE3=1` forces the fallback path (used by the benchmark row `minibox_limits_migrate` and by `tests/clone3_test.sh` to compare both). `minibox exec` still joins the cgroup by writing `cgroup.procs`, so `exec` still pays that cost.
+
 ### `--init`: a tiny PID 1 (opt-in)
 ```sh
 sudo ./minibox run -d --init --name web -- sleep 300
@@ -92,6 +97,7 @@ sudo tests/phase3_test.sh    # cgroup limit checks
 sudo tests/phase4_test.sh    # run -d / ps / logs / stop / rm checks
 sudo tests/phase4b_test.sh   # exec checks
 sudo bash tests/init_test.sh # --init checks (PID 1, reaping, exit codes, stop, limits, veth, exec)
+sudo bash tests/clone3_test.sh # clone3 into the cgroup vs the cgroup.procs fallback (both paths, strace injection, timing)
 sudo bash tests/run_all.sh   # all of the above, one PASS/FAIL line per script (make test-all prints this)
 ```
 
@@ -149,7 +155,7 @@ make charts          # no root: python3 bench/make_charts.py bench/results/lates
 Method, how to read the charts and the limitations of the numbers: `docs/BENCHMARKS.md`.
 
 ### Results (reference run)
-One full run (N=30 per configuration) on the author's WSL2 machine is kept in `bench/results/reference/`. Starting a container without limits took a median of 3.994 ms, close to raw `unshare` (3.893 ms), so the rootfs setup adds little to namespace creation. With limits the median was 32.124 ms while the minimum stayed at 3.506 ms; that extra delay is observed but unexplained. With a veth network the median was 165.379 ms, likely because of the `ip` commands. Docker was not measured (not installed). All eight limit checks passed. Details, the full tables, the machine, the analysis and the limitations are in `docs/BENCHMARKS.md`.
+One full run (N=30 per configuration) on the author's WSL2 machine is kept in `bench/results/reference/`. Starting a container without limits took a median of 3.994 ms, close to raw `unshare` (3.893 ms), so the rootfs setup adds little to namespace creation. With limits the median was 32.124 ms while the minimum stayed at 3.506 ms; strace showed that the extra delay was the parent's write to `cgroup.procs` (9-36 ms per run; a cgroup migration, likely slow because of a kernel lock/RCU wait, not proven), so containers with limits are now created directly inside their cgroup with `clone3(CLONE_INTO_CGROUP)`. This reference run was made before that change; the after-fix numbers are a placeholder in `docs/BENCHMARKS.md` until the benchmark is re-run (`minibox_limits_migrate` is the old path, for comparison). With a veth network the median was 165.379 ms, likely because of the `ip` commands. Docker was not measured (not installed). All eight limit checks passed. Details, the full tables, the machine, the analysis and the limitations are in `docs/BENCHMARKS.md`.
 
 | Configuration | n | min (ms) | median (ms) | mean (ms) | p95 (ms) | stdev (ms) |
 |---|---|---|---|---|---|---|

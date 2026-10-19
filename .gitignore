@@ -28,6 +28,7 @@ env/
 # Web UI
 ui/venv/
 
-# Benchmarks: keep only one chosen reference run (copy it to bench/results/reference/)
+# Benchmarks: keep only the chosen reference runs (bench/results/reference/ and older ones kept as
+# bench/results/reference-<what>/, e.g. reference-before-clone3/)
 bench/results/*
-!bench/results/reference/
+!bench/results/reference*/

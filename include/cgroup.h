@@ -33,12 +33,27 @@ int cgroup_check_v2(void);
 
 /*
  * Create CGROUP_BASE (if needed) with controllers enabled, create the leaf
- * box-<id>, write the limits and move `pid` into it (cgroup.procs).
+ * box-<id> and write the limits. No process is in it yet: the container is
+ * either created inside it (clone3 + CLONE_INTO_CGROUP, see cgroup_open_dir)
+ * or moved in later with cgroup_add_process.
  * Returns 0 or -1 (message printed). If cg->created is set afterwards the
  * caller must call cgroup_remove(), also on failure.
  */
-int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
-                 const struct cgroup_limits *lim);
+int cgroup_create(struct cgroup *cg, const char *id,
+                  const struct cgroup_limits *lim);
+
+/*
+ * Open the leaf directory (O_RDONLY|O_DIRECTORY|O_CLOEXEC) for clone3's
+ * CLONE_INTO_CGROUP. Returns the descriptor, or -1 with a message printed.
+ * The caller closes it.
+ */
+int cgroup_open_dir(const struct cgroup *cg);
+
+/*
+ * Move `pid` into the leaf by writing it to cgroup.procs (the slow path:
+ * a cgroup migration). Returns 0 or -1 (message printed).
+ */
+int cgroup_add_process(const struct cgroup *cg, pid_t pid);
 
 /* Print memory.peak, cpu.stat usage_usec, pids.peak, oom_kill to stderr. */
 void cgroup_print_stats(const struct cgroup *cg);

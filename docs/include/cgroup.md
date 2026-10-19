@@ -9,7 +9,7 @@ Public interface of the cgroup module (used by `src/container.c`, `src/commands.
 - `struct cgroup_limits { long long memory_bytes; long cpu_quota_us; long pids_max; }` – 0 means "not set".
   `cpu_quota_us` is per `CGROUP_CPU_PERIOD`, so `--cpus 0.5` → 50000.
 - `struct cgroup { char path[CGROUP_PATH_LEN]; int created; }` – one container's leaf; `created` = must be removed.
-- `int cgroup_limits_set(lim)`, `int cgroup_check_v2(void)`, `int cgroup_setup(cg, id, pid, lim)`,
+- `int cgroup_limits_set(lim)`, `int cgroup_check_v2(void)`, `int cgroup_create(cg, id, lim)` (leaf + limits, no process), `int cgroup_open_dir(cg)` (fd for `CLONE_INTO_CGROUP`), `int cgroup_add_process(cg, pid)` (fallback: write `cgroup.procs`),
   `void cgroup_print_stats(cg)`, `long long cgroup_oom_kills(cg)`, `void cgroup_remove(cg)`, `void cgroup_remove_leftover(id)`, `int cgroup_join_leaf(id, pid)` (used by `exec`: 0 moved, 1 no cgroup, -1 error).
 
 Signatures, return values, errors and side effects: `docs/src/cgroup.md`.

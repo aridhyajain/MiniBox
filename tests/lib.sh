@@ -78,3 +78,18 @@ zombies_of() {
     done
     echo "$n"
 }
+
+# state_leftovers <state dir>: prints everything in the state directory except the .lock file that
+# minibox creates and keeps on purpose (container subdirectories, stray files). Empty output = clean.
+state_leftovers() {
+    find "$1" -mindepth 1 -maxdepth 1 ! -name .lock -printf '%f\n' 2>/dev/null | tr '\n' ' '
+}
+
+# state_clean <state dir>: succeeds when state_leftovers prints nothing; on failure prints what it found.
+state_clean() {
+    local found
+    found=$(state_leftovers "$1")
+    [ -z "$found" ] && return 0
+    echo "$found"
+    return 1
+}

@@ -6,7 +6,7 @@
 # Scripts that do not exist yet are skipped. Exit status: 0 if none failed, 1 otherwise.
 
 TESTS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRIPTS="phase1_test.sh phase2_test.sh phase3_test.sh phase4_test.sh phase4b_test.sh phase5_test.sh phase6_test.sh init_test.sh"
+SCRIPTS="phase1_test.sh phase2_test.sh phase3_test.sh phase4_test.sh phase4b_test.sh phase5_test.sh phase6_test.sh init_test.sh clone3_test.sh"
 VERBOSE=0
 
 if [ "$(id -u)" -ne 0 ]; then

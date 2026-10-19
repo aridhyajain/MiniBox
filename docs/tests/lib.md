@@ -20,6 +20,8 @@ a *zombie*: not running, but still in the process table. `pids.current` counts z
 | `dump_cgroup id` | container ID | prints every process in the cgroup: host PID, state, command line, then the zombie `INFO:` line | – |
 | `report_live name rc id baseline` | check name, status, ID, baseline | calls `report` with the live count and baseline; on failure also `dump_cgroup` | counts a failure through `report` |
 | `zombies_of ppid` | host PID | prints the number of zombies (state `Z`) whose parent is that PID, by scanning `/proc/*/stat` | – |
+| `state_leftovers dir` | state directory | prints every entry except `.lock` (the lock file minibox keeps on purpose); empty = clean | – |
+| `state_clean dir` | state directory | 0 if `state_leftovers` is empty; else prints what it found and returns 1 | – |
 
 ## System calls used and why
 None directly. It reads `/sys/fs/cgroup/minibox/box-<id>/{cgroup.procs,pids.current}` and `/proc/<pid>/{stat,cmdline}` (which use `open`/`read`).

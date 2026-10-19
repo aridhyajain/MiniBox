@@ -248,7 +248,11 @@ static int apply_limits(const char *leaf, const struct cgroup_limits *lim)
     return write_in(leaf, "memory.oom.group", "1");
 }
 
-/* Writing a PID to cgroup.procs moves that process into the cgroup. */
+/*
+ * Writing a PID to cgroup.procs moves that process into the cgroup. This is a
+ * cgroup migration: the kernel takes a global lock and can wait for an RCU
+ * grace period, which measured 9-36 ms here (docs/BENCHMARKS.md).
+ */
 static int add_process(const char *leaf, pid_t pid)
 {
     char value[32];
@@ -257,8 +261,8 @@ static int add_process(const char *leaf, pid_t pid)
     return write_in(leaf, "cgroup.procs", value);
 }
 
-int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
-                 const struct cgroup_limits *lim)
+int cgroup_create(struct cgroup *cg, const char *id,
+                  const struct cgroup_limits *lim)
 {
     int n;
 
@@ -275,8 +279,21 @@ int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
         return -1;
     }
     cg->created = 1;
-    if (apply_limits(cg->path, lim) == -1)
-        return -1;
+    return apply_limits(cg->path, lim);
+}
+
+/* A directory descriptor names a cgroup for clone3(CLONE_INTO_CGROUP). */
+int cgroup_open_dir(const struct cgroup *cg)
+{
+    int fd = open(cg->path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+    if (fd == -1)
+        fprintf(stderr, "minibox: open %s: %s\n", cg->path, strerror(errno));
+    return fd;
+}
+
+int cgroup_add_process(const struct cgroup *cg, pid_t pid)
+{
     return add_process(cg->path, pid);
 }
 

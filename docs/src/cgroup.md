@@ -2,7 +2,7 @@
 
 ## Purpose
 Resource limits with cgroups v2: check that cgroup v2 is usable, create one leaf cgroup per container,
-write the memory/CPU/pids limits, move the container into it, read usage statistics, and remove it.
+write the memory/CPU/pids limits, hand its directory descriptor to `clone3(CLONE_INTO_CGROUP)` (or, on the fallback path, move the container into it), read usage statistics, and remove it.
 Only plain `open`/`read`/`write`/`close`/`mkdir`/`rmdir` on `/sys/fs/cgroup` — no external tools.
 
 ## Hierarchy used
@@ -21,7 +21,9 @@ concurrent container could be creating its leaf at that moment.
 |----------|--------|---------|-----------------------|
 | `int cgroup_limits_set(const struct cgroup_limits *lim)` | limits | 1 if any of memory/cpu/pids is set | – |
 | `int cgroup_check_v2(void)` | – | 0 / -1 | `statfs(/sys/fs/cgroup)` must report `CGROUP2_SUPER_MAGIC`; `cgroup.controllers` must list `memory`, `cpu`, `pids`; clear message otherwise |
-| `int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid, const struct cgroup_limits *lim)` | leaf to fill, container ID, container host PID, limits | 0 / -1 | `prepare_base`, `mkdir box-<id>` (sets `cg->created`), `apply_limits`, `add_process`. On -1 with `cg->created` set, the caller must call `cgroup_remove`. |
+| `int cgroup_create(struct cgroup *cg, const char *id, const struct cgroup_limits *lim)` | leaf to fill, container ID, limits | 0 / -1 | `prepare_base`, `mkdir box-<id>` (sets `cg->created`), `apply_limits`. **No process is moved**: it runs before the container exists. On -1 with `cg->created` set, the caller must call `cgroup_remove`. (Replaces the old `cgroup_setup(cg, id, pid, lim)`, which also wrote the PID.) |
+| `int cgroup_open_dir(const struct cgroup *cg)` | leaf | fd / -1 | `open(path, O_RDONLY\|O_DIRECTORY\|O_CLOEXEC)`; the descriptor names the cgroup for `clone3`'s `CLONE_INTO_CGROUP`. Message on error; the caller closes it. |
+| `int cgroup_add_process(const struct cgroup *cg, pid_t pid)` | leaf, PID | 0 / -1 | the **fallback / migration path**: writes the PID to `cgroup.procs` (see below). Used only when clone3 is unavailable or `MINIBOX_NO_CLONE3=1`. |
 | `void cgroup_print_stats(const struct cgroup *cg)` | leaf | – | prints `[stats]` lines to stderr: `memory.peak`, `cpu.usage_usec` (from `cpu.stat`), `pids.peak`, `oom_kill` (from `memory.events`); skips missing files |
 | `long long cgroup_oom_kills(const struct cgroup *cg)` | leaf | `oom_kill` count, 0 if unknown | – |
 | `void cgroup_remove(struct cgroup *cg)` | leaf | – | `rmdir`, retried every 100 ms for up to 1 s while `EBUSY` (processes still exiting); on failure prints the `sudo rmdir` command |
@@ -34,8 +36,14 @@ concurrent container could be creating its leaf at that moment.
 | static `write_cpu_limit(leaf, quota)` | – | 0 / -1 | `cpu.max = "<quota> 100000"` |
 | static `write_pids_limit(leaf, n)` | – | 0 / -1 | `pids.max = n` |
 | static `apply_limits(leaf, lim)` | – | 0 / -1 | writes only the limits that were given, then `memory.oom.group = 1` |
-| static `add_process(leaf, pid)` | – | 0 / -1 | writes the PID to `cgroup.procs` (moves the process) |
+| static `add_process(leaf, pid)` | – | 0 / -1 | writes the PID to `cgroup.procs` (moves the process); shared by `cgroup_add_process` and `cgroup_join_leaf` |
 | static `read_stat(leaf, file, key, &out)` | file, `NULL` or key | 0 / -1 | single-number files or `"key value"` lines (exact key match, so `oom_group_kill` ≠ `oom_kill`) |
+
+## Why `cgroup.procs` is avoided: the cost of a migration
+Writing a PID to `cgroup.procs` *migrates* a running task from one cgroup to another. strace of `run --net none --memory 64M --cpus 0.5 --pids 20 -- /bin/true`
+showed this one `write` taking 10.6, 35.7, 8.7, 13.3 and 13.0 ms in five runs (no other syscall was slow). The likely cause (not proven) is a global
+kernel lock taken for migrations that can wait for an RCU grace period, which is slow in a VM such as WSL2. Creating the process *inside* the
+cgroup needs no migration. `minibox exec` still joins with `cgroup_join_leaf` (a write to `cgroup.procs`), so **exec still pays the migration cost**.
 
 Stats output format (stderr):
 ```
@@ -47,7 +55,7 @@ Stats output format (stderr):
 
 ## System calls used and why
 - `statfs` – identify the filesystem at `/sys/fs/cgroup` as cgroup v2 by its magic number.
-- `open`, `read`, `write`, `close` – every cgroup knob is a file; writing a value configures the kernel.
+- `open`, `read`, `write`, `close` – every cgroup knob is a file; writing a value configures the kernel. `open(O_DIRECTORY)` of the leaf gives the fd for `CLONE_INTO_CGROUP`.
 - `mkdir` – creating a directory in cgroupfs creates a cgroup (the kernel fills in its files).
 - `rmdir` – removes an *empty* cgroup (`EBUSY` while it still has processes).
 - `access` – optional files (`memory.swap.max`, `memory.peak`, `pids.peak`) are skipped if absent.

@@ -403,7 +403,7 @@ The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `ben
 
 **Why is startup with veth slower?** The likely reason is that the setup runs several `ip` commands as separate processes and moves interfaces between network namespaces. This is the likely reason, not something we measured.
 
-**Why is `minibox_limits` slow at the median when its minimum is the same?** Observed and unexplained: most runs have an extra delay of roughly 30 ms. We did not investigate, so we do not claim a cause; hypotheses are cgroup creation or removal cost and waiting on teardown.
+**Why was `minibox_limits` slow at the median when its minimum was the same?** In the reference run (before the clone3 change) most runs had an extra delay of roughly 30 ms. strace showed it was one write: the parent writing the child's PID into `cgroup.procs` (9-36 ms). See "Phase 8" below for the explanation and the fix.
 
 ## Phase 7 – the `--init` option (a tiny PID 1)
 
@@ -435,3 +435,41 @@ One more process per container (a few hundred KB of memory, one entry against `-
 
 ### How is it tested?
 `sudo bash tests/init_test.sh`: PID 1 is `minibox-init` and the command is PID 2 (control: without `--init` the command is PID 1); an orphan is reaped (0 zombies; control without `--init` shows 1); exit codes 7, 143, 137, 127, 126 are propagated; `stop` takes under 2 s and gives 143 (control: grace period then 137); the earlier benchmark hang (`timeout` as PID 1) cannot happen; limits, `--net veth` and `exec` work; nothing is left behind.
+
+## Phase 8 – finding and removing the cgroup start-up delay
+
+### What is a cgroup migration?
+A cgroup is a group of processes with limits. Every process is always in exactly one cgroup. A *migration* is moving an already running process from one
+cgroup to another, which is what writing its PID into the new cgroup's `cgroup.procs` file does. Moving a live process is not a simple pointer change: the
+kernel must keep the old and the new group's counters (memory, pids, CPU time) consistent and must not race with `fork()` or `exit()`. For that it takes a
+global lock. The *likely* consequence (my explanation, not something I proved) is that it can wait for an RCU grace period (a short wait until every CPU has
+passed a safe point), and in a virtual machine like WSL2 that wait is long.
+
+### How did strace find the delay?
+`strace -f -ttt -T` prints every system call with a timestamp (`-ttt`) and the time spent inside it (`-T`), and follows child processes (`-f`).
+I ran `minibox run --net none --memory 64M --cpus 0.5 --pids 20 -- /bin/true` five times under it. One call stood out each time: the parent's `write` of the child's PID
+to `cgroup.procs` took 10.6, 35.7, 8.7, 13.3 and 13.0 ms, while the child waited on the pipe. Every other syscall was fast. The run with limits took 26-57 ms in total against
+14-15 ms without a cgroup. So the benchmark's "32 ms with limits" was not mysterious slow setup work but this one write.
+
+### What do `clone3` and `CLONE_INTO_CGROUP` do?
+`clone()` and `fork()` create a process. `clone3()` is the newer version of `clone()`: instead of one flags number it takes a struct, so it can carry more options.
+One of them is `CLONE_INTO_CGROUP` (Linux 5.7+) plus a file descriptor of a cgroup directory: the new process is born inside that cgroup. There is nothing to migrate, because
+the process was never anywhere else. So minibox now does: make the cgroup directory, write the limits, open the directory, `clone3` with the same namespace flags plus `CLONE_INTO_CGROUP`.
+`clone3` behaves like `fork`: no function and no stack argument; the child just continues after the call.
+
+### Why is the old path kept as a fallback?
+Not every system has `clone3`: an old kernel returns `ENOSYS`, and a sandbox (a container's seccomp filter) may refuse it with `EPERM`. Then minibox prints one note and uses the old
+`clone()` + write to `cgroup.procs`, which works everywhere. The same path is also reachable on purpose with `MINIBOX_NO_CLONE3=1`, so that the benchmark can show
+before and after in one run (`minibox_limits_migrate` against `minibox_limits`) and the tests can check that both paths give the same limits. `minibox exec` still uses the old way (it joins an existing container's cgroup) and so still pays the migration cost.
+
+### How do I answer "how did you find this bottleneck?"
+"The benchmark showed that containers with limits had a median of 32 ms against 4 ms without, but the minimum was the same, so the setup work itself was not slower. I did not guess:
+I traced the run with `strace -f -ttt -T` and looked for the slowest syscall. It was the write of the PID to `cgroup.procs`, 9-36 ms in five runs, and nothing else was slow. The likely reason is that moving a running
+process between cgroups takes a kernel lock that can wait for an RCU grace period; I did not prove that part. The fix avoids the move: create the cgroup first and create the process inside it with
+`clone3(CLONE_INTO_CGROUP)`. I kept the old path as a fallback and as an environment switch so I can measure before and after, and I re-ran the benchmark to check." (Say "re-ran" only after the new reference run exists.)
+
+### Likely follow-up questions
+- *Is the new way safer or just faster?* Same limits, same files; one difference is that the container's own setup (hostname, mounts) is now accounted to its cgroup from the first instruction.
+- *What if the cgroup cannot be created?* That is now detected before any process exists: clear error, nothing to kill, the directory is removed.
+- *Why not just measure inside minibox?* strace already shows per-syscall time without changing the code, and it points at the exact write. Timing inside minibox would be the next step if strace had been inconclusive.
+- *Did the fix change behaviour?* No visible change: same cgroup name `box-<id>`, same files, same cleanup, same no-internal-processes rule. `tests/clone3_test.sh` checks both paths.

@@ -34,6 +34,10 @@ CG_BASE = "/sys/fs/cgroup/minibox"
 MB_STATE_KEYS = ("pid", "monitor_pid", "status")
 MEM_COUNTS = (1, 5, 10)
 LIMITS_FOR_STARTUP = ["--memory", "256M", "--cpus", "1", "--pids", "64"]
+# Startup configurations that need an extra environment variable (only for that configuration).
+# MINIBOX_NO_CLONE3=1 makes minibox use clone() + a write to cgroup.procs (a cgroup migration)
+# instead of clone3(CLONE_INTO_CGROUP): the "before" of the clone3 fix, next to the normal "after".
+STARTUP_EXTRA_ENV = {"minibox_limits_migrate": {"MINIBOX_NO_CLONE3": "1"}}
 DOCKER_IMAGE = "alpine"
 CALL_TIMEOUT = 20           # seconds for any single minibox/docker call unless a step needs more
 TIMEOUT_RC = -999           # returncode recorded for a call that hit its timeout
@@ -290,6 +294,11 @@ def timed(argv, env, timeout=CALL_TIMEOUT):
     return time.perf_counter_ns() - t0, rc
 
 
+def startup_env(base_env, name):
+    """Environment for one startup configuration: base_env plus its extra variables, if any."""
+    return dict(base_env, **STARTUP_EXTRA_ENV.get(name, {}))
+
+
 def startup_configs(b):
     """Ordered dict name -> (argv or None, note). None means 'not measured'."""
     cfgs = {}
@@ -303,7 +312,10 @@ def startup_configs(b):
     cfgs["minibox_nolimits"] = (b.mb_run_args(["--net", "none"], ["/bin/true"]),
                                 "minibox run --net none, no limits")
     cfgs["minibox_limits"] = (b.mb_run_args(["--net", "none"] + LIMITS_FOR_STARTUP, ["/bin/true"]),
-                              "minibox run --net none + memory/cpu/pids limits")
+                              "minibox run --net none + memory/cpu/pids limits (clone3 into the cgroup)")
+    cfgs["minibox_limits_migrate"] = (
+        b.mb_run_args(["--net", "none"] + LIMITS_FOR_STARTUP, ["/bin/true"]),
+        "same limits, MINIBOX_NO_CLONE3=1: clone() then move into the cgroup (old path)")
     cfgs["minibox_veth_limits"] = (b.mb_run_args(["--net", "veth"] + LIMITS_FOR_STARTUP, ["/bin/true"]),
                                    "minibox run --net veth + limits")
     if b.docker_ok:
@@ -321,14 +333,14 @@ def bench_startup(b):
     active = {k: v[0] for k, v in cfgs.items() if v[0]}
     for name in active:
         for _ in range(b.warmups):          # discarded: warms page cache, dentries, CPU caches
-            if timed(active[name], b.env)[1] == TIMEOUT_RC:
+            if timed(active[name], startup_env(b.env, name))[1] == TIMEOUT_RC:
                 b.fail("TIMEOUT", "startup warm-up %s" % name)
                 b.cleanup()
     schedule = [name for name in active for _ in range(b.runs)]
     random.Random(b.seed).shuffle(schedule)  # interleave so drift hits every config equally
     raw = []
     for order, name in enumerate(schedule):
-        ns, rc = timed(active[name], b.env)
+        ns, rc = timed(active[name], startup_env(b.env, name))
         raw.append((name, order, ns, rc))
         if rc == TIMEOUT_RC:
             b.fail("TIMEOUT", "startup run %s #%d" % (name, order))

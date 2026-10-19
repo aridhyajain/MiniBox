@@ -23,7 +23,9 @@ A configuration that was not measured (for example docker) gets a "not measured"
 | `y_axis(left, top, w, h, ticks, unit, log=False)` | geometry, ticks, axis title | `(svg lines, pos)`; `pos(v)` gives the y coordinate of a value (log or linear) | – |
 | `bar_label(med, p95)` | ms values | `"3.9 ms (p95 8.4)"` | – |
 | `legend_layout(items, left, width, y0)` | legend labels | `(x, y, text_x, text_end)` per entry; wraps to a new row so entries never overlap | – |
-| `startup_svg(rows)` | rows of `startup_summary.csv` | SVG string: **log** y axis (ticks cover the data and stop one tick above the largest p95; "log scale" in subtitle and axis title), one label above each bar, whisker to p95, "not measured" slot | – |
+| `wrap_label(name, max_chars=16)` | configuration name | list of lines (split at underscores) | – |
+| `n_summary(measured)` | measured rows | `"n=30 per configuration"` when all `n` are equal, else one `name n=..` per row | – |
+| `startup_svg(rows)` | rows of `startup_summary.csv` | SVG string: **log** y axis (ticks cover the data and stop one tick above the largest p95; "log scale" in subtitle and axis title), one label above each bar, whisker to p95, at least `MIN_STARTUP_SLOT` (150 px) per bar so 7 configurations do not overlap (the SVG grows wider), two-line category labels, "not measured" slot | – |
 | `memory_svg(rows, incr)` | rows of `memory.csv`, rows of `memory_incremental.csv` | SVG string (y axis max chosen from the data incl. the host line; wrapped legend; minibox cgroup / init PSS / monitor PSS bars, host sleep dashed line, docker note) | – |
 | `limits_svg(rows)` | rows of `limits.csv` | SVG table string | – |
 | `make_all(results_dir, out_dir)` | two paths | list of written paths | creates `out_dir`; prints "skipped" for a missing CSV |
