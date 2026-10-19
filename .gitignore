@@ -32,3 +32,4 @@ ui/venv/
 # bench/results/reference-<what>/, e.g. reference-before-clone3/)
 bench/results/*
 !bench/results/reference*/
+!bench/results/analysis/

@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c src/minit.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick charts ui-setup ui-run demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick probe-attach charts ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -100,6 +100,10 @@ bench: $(TARGET)
 bench-quick: $(TARGET)
 	@echo "Quick benchmark (N=5) needs root. Run:"
 	@echo "  sudo python3 bench/bench.py all --quick"
+
+probe-attach: $(TARGET)
+	@echo "The attach-stall probe (clone3 vs cgroup migration, a few minutes) needs root. Run:"
+	@echo "  sudo bench/probe_attach_stall.sh bench/results/analysis/my_probe.txt"
 
 charts:
 	python3 bench/make_charts.py bench/results/latest

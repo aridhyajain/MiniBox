@@ -1,0 +1,17 @@
+ms per run, sorted, 12 runs after 2 warm-ups
+--net none                                     clone3   9 9 9 10 10 10 10 11 11 11 11 12 
+--net none                                     migrate  9 9 9 9 10 10 10 10 10 10 11 12 
+--net none --memory 64M                        clone3   9 9 10 10 10 10 10 10 10 11 11 11 
+--net none --memory 64M                        migrate  9 9 10 10 10 10 10 10 11 11 12 40 
+--net none --pids 20                           clone3   9 10 10 10 10 10 11 11 11 11 11 12 
+--net none --pids 20                           migrate  9 10 10 10 10 10 11 11 11 11 12 12 
+--net none --cpus 0.5                          clone3   10 10 10 10 10 10 11 11 11 11 11 15 
+--net none --cpus 0.5                          migrate  9 10 10 10 10 10 10 11 11 11 11 11 
+--net none --cpus 1                            clone3   9 9 9 9 10 10 10 10 10 10 10 12 
+--net none --cpus 1                            migrate  10 10 10 10 10 10 10 11 11 11 11 11 
+--net none --memory 256M --cpus 1 --pids 64    clone3   10 10 10 10 10 10 10 10 11 11 11 11 
+--net none --memory 256M --cpus 1 --pids 64    migrate  9 10 10 10 10 10 10 11 11 11 13 32 
+--net none --memory 64M --cpus 0.5 --pids 20   clone3   11 11 11 12 12 12 12 12 12 12 13 13 
+--net none --memory 64M --cpus 0.5 --pids 20   migrate  9 9 10 10 10 10 10 11 11 11 11 12 
+limited run right after a veth run             clone3   10 12 12 12 12 13 13 14 14 18 
+limited run right after a veth run             migrate  24 26 28 29 29 32 32 33 35 39 

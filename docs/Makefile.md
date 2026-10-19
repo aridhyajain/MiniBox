@@ -28,6 +28,7 @@ Single entry point for building, setup and test instructions.
 | `test-bench` | runs `python3 -m unittest tests/test_bench_stats.py -v` (no root) | – |
 | `bench` | builds, then prints `sudo python3 bench/bench.py all` (full run, N=30) | prints only; never runs sudo itself |
 | `bench-quick` | builds, then prints `sudo python3 bench/bench.py all --quick` | prints only; never runs sudo itself |
+| `probe-attach` | builds, then prints `sudo bench/probe_attach_stall.sh bench/results/analysis/my_probe.txt` (the file name must not exist yet) | prints only; never runs sudo itself |
 | `charts` | runs `python3 bench/make_charts.py bench/results/latest` (no root) | error if no results exist yet |
 | `ui-setup` | prints `scripts/setup_ui.sh` (creates `ui/venv`, no sudo) | prints only |
 | `ui-run` | builds, then prints `sudo scripts/run_ui.sh 8080` | prints only; never runs sudo itself |
@@ -54,6 +55,7 @@ make test-phase4b
 make test-phase5
 make test-init   # prints: sudo bash tests/init_test.sh
 make test-clone3 # prints: sudo bash tests/clone3_test.sh
+make probe-attach # prints: sudo bench/probe_attach_stall.sh bench/results/analysis/my_probe.txt
 make ui-setup    # prints scripts/setup_ui.sh
 make ui-run      # prints sudo scripts/run_ui.sh 8080
 make test-all   # prints: sudo bash tests/run_all.sh
