@@ -3,7 +3,8 @@
 ## Purpose
 `minibox exec <id|name> -- COMMAND [ARGS...]`: run a command inside an **already running** container. The command
 shares the container's IPC, UTS, network, PID and mount namespaces and its cgroup, and uses the caller's stdin, stdout
-and stderr (so `exec <id> -- sh` is an interactive shell). The exit status is the command's.
+and stderr (so `exec <id> -- sh` is an interactive shell). The exit status is the command's. The command **dies with
+`minibox exec`**: if exec is stopped, the command does not keep running inside the container (see "Dying together").
 
 ## Usage
 ```
@@ -19,9 +20,37 @@ sudo ./minibox exec demo -- sh                   # interactive
    (`exited` → `not running (status: exited)`, `dead` → use `rm`). The stored PID must still be a PID-namespace init
    (`state_pid_is_ns_init`), which guards against a reused PID.
 4. **Open** `/proc/<pid>/ns/{ipc,uts,net,pid,mnt}` and `/proc/<pid>/root` as descriptors, all before joining anything.
-5. **Parent**: `setns(pid)` (affects only children), ignore SIGINT/SIGQUIT, `fork`, `waitpid`.
-6. **Child** (now in the container's PID namespace): join the cgroup (host path), `setns` ipc → uts → net → **mnt**,
-   `fchdir(root)` + `chroot(".")` + `chdir("/")`, build the environment, `execvp`.
+5. **Parent**: `setns(pid)` (affects only children), choose the mode (below), block SIGTERM/SIGINT/SIGHUP, `fork`, set up signals, `waitpid`.
+6. **Child** (now in the container's PID namespace): `prctl(PR_SET_PDEATHSIG, SIGKILL)` and re-check the parent; in group mode `setpgid(0,0)`;
+   join the cgroup (host path), `setns` ipc → uts → net → **mnt**, `fchdir(root)` + `chroot(".")` + `chdir("/")`, build the environment, `execvp`.
+
+## Dying together (why and how)
+**Problem.** `waitpid` in the parent does not protect the command: if `minibox exec` is killed (a timeout in the web UI, `kill`, a closed SSH session),
+the command keeps running. Its parent is gone, so the kernel reparents it to the **init of its PID namespace** (the container's PID 1). It stays in
+the container's cgroup and still counts against `pids.max` until it ends by itself.
+
+**Fix 1: `PR_SET_PDEATHSIG` (always).** Right after `fork` the child calls `prctl(PR_SET_PDEATHSIG, SIGKILL)`: when its parent dies the kernel
+sends it SIGKILL. The parent may have died *before* the call, and then no signal would ever arrive, so the child re-checks. Its parent is on the host,
+outside the container's PID namespace, and a process cannot see a parent outside its namespace: `getppid()` is 0 while the parent lives and becomes
+the container's init (non-zero) after reparenting. `getppid() != 0` therefore means "minibox exec is already gone": the child exits. The setting
+survives `execve`, so it applies to the command itself.
+
+**Fix 2: process group + signal forwarding (only when stdin is not a terminal).** When `isatty(0)` is false (scripts, the web UI) the child calls
+`setpgid(0,0)` and becomes the leader of a new process group, and the parent also calls `setpgid(child, child)` so the group exists whichever side runs
+first. Everything the command starts inherits the group. The parent installs handlers for SIGTERM, SIGINT and SIGHUP; the handler only does
+async-signal-safe things (`kill(-pgid, SIGKILL)`, `kill(pid, SIGKILL)`, two plain stores). Then `waitpid` returns, the parent reaps the child and exits
+with **128 + the signal** (143 for SIGTERM). The three signals are blocked across `fork` so one that arrives early waits until the handler and the PID are ready.
+
+**Interactive terminals are different.** With `exec -- sh` on a terminal the command must stay in the terminal's foreground process group, otherwise
+the shell would get job-control trouble (SIGTTIN/SIGTTOU when it reads the terminal) and Ctrl-C would no longer reach it. So with a tty the behaviour is
+as before: same process group, SIGINT/SIGQUIT ignored in the parent while it waits, no forwarding handlers. Only `PR_SET_PDEATHSIG` still applies there
+(for example when the terminal window is closed and the parent dies).
+
+**Limits.** Nothing can run after SIGKILL, so SIGKILL of `minibox exec` cannot be forwarded: the direct child dies through PDEATHSIG, but a
+**grandchild** (e.g. the second `sleep` in `sh -c 'sleep 30 & sleep 30'`) survives, because PDEATHSIG is not inherited by a process's own children.
+A command that leaves its process group (`setsid`, `setpgid`) also escapes the group kill. Both survivors stay in the container's cgroup until they exit,
+and are removed by `stop`/`rm` (killing the container's init kills the whole PID namespace). In a normal exit the parent does nothing about leftover
+background processes (as before). `getppid() != 0` assumes `minibox exec` runs outside the container's PID namespace (always true for the host binary).
 
 ## Functions
 | Function | Inputs | Returns | Errors / side effects |
@@ -36,10 +65,15 @@ sudo ./minibox exec demo -- sh                   # interactive
 | static `enter_root(root_fd)` | fd of `/proc/<pid>/root` | 0 / -1 | `fchdir`, `chroot(".")`, `chdir("/")` |
 | static `set_environment(term)` | caller's TERM | 0 / -1 | `clearenv`, then `PATH=DEFAULT_PATH` (same as `run`), `HOME=/root`, `TERM` |
 | static `child_setup(st, t, term)` | – | 0 / -1 | cgroup → namespaces (mnt last; pid skipped, the parent did it) → root → environment |
-| static `child_main(st, t, term, argv)` | – | never returns | setup failure → `_exit(1)`; closes the descriptors; `execvp`; failure → `exec X: strerror`, `_exit(127)` |
-| static `wait_for_child(pid)` | child PID | exit status / 128+N / 1 | `waitpid` retried on `EINTR` |
-| static `ignore_interrupts(old_int, old_quit)` / `restore_interrupts(...)` | saved actions | 0 / -1 | `sigaction` for SIGINT and SIGQUIT |
-| static `run_in_container(st, t, term, argv)` | – | status / -1 | `setns(pid)`, ignore signals, `fork`, wait |
+| static `die_with_parent()` | – | 0 / -1 | `prctl(PR_SET_PDEATHSIG, SIGKILL)`, then fails if `getppid() != 0` (parent already gone) |
+| static `child_main(st, t, term, argv, group_mode)` | – | never returns | `die_with_parent`; in group mode `setpgid(0,0)`; setup failure → `_exit(1)`; closes the descriptors; `execvp`; failure → `exec X: strerror`, `_exit(127)` |
+| static `wait_for_child(pid)` | child PID | exit status / 128+N / 1; **128+signal if a forwarded signal arrived** | `waitpid` retried on `EINTR` |
+| static `ignore_interrupts(old_int, old_quit)` / `restore_interrupts(...)` | saved actions | 0 / -1 | `sigaction` for SIGINT and SIGQUIT (tty mode only) |
+| static `kill_command(sig)` | signal number | – | signal handler: stores the signal, `kill(-pgid, SIGKILL)` and `kill(pid, SIGKILL)`; async-signal-safe only; preserves `errno` |
+| static `install_kill_handlers(old)` / `restore_kill_handlers(old)` | saved actions | 0 / -1 | `sigaction` for SIGTERM, SIGINT, SIGHUP (group mode only) |
+| static `run_in_container(st, t, term, argv)` | – | status / -1 | `setns(pid)`, block the three signals, pick the mode with `isatty(0)`, `fork`, `setpgid(child, child)`, handlers, unblock, wait |
+
+Global state (needed because a signal handler gets no arguments): `g_child_pgid` (`volatile pid_t`) and `g_signal` (`volatile sig_atomic_t`).
 
 Constants/tables: `NAMESPACES[]` = `{name, CLONE_NEW*}` for ipc, uts, net, pid, mnt (mnt last, see below); `DEFAULT_TERM` = `xterm`
 when the caller has no `TERM`.
@@ -50,7 +84,10 @@ when the caller has no `TERM`.
 - `fork`, `waitpid` – needed because a PID-namespace join only affects children; the parent also reports the status.
 - `fchdir`, `chroot`, `chdir` – put the process in the container's root directory.
 - `open`/`write` on `cgroup.procs` (through `cgroup_join_leaf`) – join the container's resource limits.
-- `sigaction` – ignore SIGINT/SIGQUIT in the waiting parent.
+- `sigaction`, `sigprocmask` – tty mode: ignore SIGINT/SIGQUIT in the waiting parent; group mode: handlers for SIGTERM/SIGINT/SIGHUP, blocked across `fork`.
+- `prctl(PR_SET_PDEATHSIG, SIGKILL)` – the kernel kills the command if `minibox exec` dies.
+- `getppid` – detect that the parent died before `prctl` ran (0 = parent alive and outside the PID namespace).
+- `isatty`, `setpgid`, `kill(-pgid, SIGKILL)` – non-interactive mode: own process group and one signal for the whole group.
 - `execvp` – replace the child with the command (searches the container's `PATH`).
 
 ## OS concept
@@ -60,8 +97,10 @@ runtime lets you "get into" a container. The ordering matters:
 - the cgroup is written first because it needs the host's `/sys/fs/cgroup`;
 - the mount namespace is joined last for both reasons.
 
-Limitations: only a PID that is the init of the container is trusted (no check of the ns files after opening); SIGTERM sent
-to `minibox exec` is not forwarded to the command; no user namespace or capability dropping (as in `run`).
+Also: orphan reparenting inside a PID namespace (to its init), parent-death signals, process groups and signal delivery to a group.
+
+Limitations: only a PID that is the init of the container is trusted (no check of the ns files after opening); SIGKILL of `minibox exec`
+cannot be forwarded and a grandchild can survive it (see "Dying together"); no user namespace or capability dropping (as in `run`).
 
 ## How to test
 ```sh
@@ -73,6 +112,9 @@ sudo tests/phase4b_test.sh             # full check
 id=$(sudo ./minibox run -d --hostname boxy --memory 64M -- sleep 300)
 sudo ./minibox exec $id -- hostname    # boxy
 sudo ./minibox exec $id -- ps          # PID 1 is sleep
-sudo ./minibox exec $id -- sh          # interactive; 'exit' to leave
+sudo ./minibox exec $id -- sh          # interactive; 'exit' to leave (tty mode, unchanged)
+# the command dies with exec (stdin not a tty):
+sudo ./minibox exec $id -- sleep 30 </dev/null & pid=$!; sleep 1
+sudo kill -TERM $pid; sudo ./minibox exec $id -- ps    # no 'sleep 30' left; the background job exited with 143
 sudo ./minibox stop $id; sudo ./minibox rm $id
 ```

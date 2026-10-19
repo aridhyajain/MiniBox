@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>minibox</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>minibox</h1>
+    <span class="muted">containers on this machine &middot; localhost only</span>
+  </header>
+
+  <main>
+    <div id="banner" class="banner" role="alert" hidden></div>
+
+    <section class="card">
+      <h2>Launch a container</h2>
+      <form id="launch-form" autocomplete="off">
+        <label class="wide">Command
+          <input id="f-command" name="command" required maxlength="1000"
+                 placeholder="sh -c 'echo hello; sleep 300'" spellcheck="false">
+        </label>
+        <label>Name <input id="f-name" name="name" maxlength="31" placeholder="optional" spellcheck="false"></label>
+        <label>Hostname <input id="f-hostname" name="hostname" maxlength="63" placeholder="optional" spellcheck="false"></label>
+        <label>Memory <input id="f-memory" name="memory" maxlength="14" placeholder="e.g. 64M"></label>
+        <label>CPUs <input id="f-cpus" name="cpus" maxlength="8" placeholder="e.g. 0.5" inputmode="decimal"></label>
+        <label>PIDs <input id="f-pids" name="pids" maxlength="5" placeholder="e.g. 32" inputmode="numeric"></label>
+        <label>Network
+          <select id="f-net" name="net">
+            <option value="none">none (isolated)</option>
+            <option value="veth">veth (own IP)</option>
+          </select>
+        </label>
+        <div class="wide actions">
+          <button id="launch-btn" type="submit" class="primary">Launch</button>
+          <span class="muted">Limits are optional. The command runs inside the project's Alpine rootfs.</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Containers</h2>
+      <div id="empty" class="empty" hidden>No containers yet. Launch one above.</div>
+      <div class="table-wrap">
+        <table id="containers" hidden>
+          <thead>
+            <tr>
+              <th>ID</th><th>Name</th><th>Status</th><th>Command</th><th>Limits</th>
+              <th>IP</th><th>Exit</th><th>Created</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="detail" class="card" hidden>
+      <div class="detail-head">
+        <h2 id="detail-title">Container</h2>
+        <button id="detail-close" type="button">Close</button>
+      </div>
+
+      <h3>Logs <span class="muted">(last 200 lines)</span></h3>
+      <div class="actions"><button id="logs-refresh" type="button">Refresh</button></div>
+      <pre id="logs" class="output" tabindex="0"></pre>
+
+      <h3>Run a command inside</h3>
+      <form id="exec-form" class="exec" autocomplete="off">
+        <input id="exec-command" placeholder="ps" maxlength="1000" spellcheck="false" aria-label="Command to run inside the container">
+        <button id="exec-btn" type="submit">Run</button>
+      </form>
+      <div id="exec-status" class="muted"></div>
+      <pre id="exec-out" class="output" tabindex="0"></pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

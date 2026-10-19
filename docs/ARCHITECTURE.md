@@ -10,6 +10,7 @@ Linux kernel primitives, without Docker.
 - **Phase 3 (implemented):** cgroups v2 limits (`--memory`, `--cpus`, `--pids`), `--stats`, cleanup on every exit path.
 - **Phase 4a (implemented):** container management: `run -d`, `ps`, `logs`, `stop`, `rm`; state on disk; a monitor process per container; one subnet per veth container.
 - **Phase 4b (implemented):** `exec` (`setns` into a running container, joining its cgroup), `tests/run_all.sh`.
+- **Phase 5 (implemented):** local web UI (Flask) that launches and manages containers by calling the CLI; token, Host check and loopback-only binding.
 - Later: Flask UI, benchmarks.
 
 ## Modules
@@ -92,6 +93,12 @@ minibox exec (host)                                   container (init = host PID
 The waiting parent stays in the host namespaces and outside the cgroup. The command inherits the caller's
 stdin/stdout/stderr. A container started without limits has no cgroup, so step 5 is skipped.
 
+**The command dies with `minibox exec`.** Right after step 4 the child calls `prctl(PR_SET_PDEATHSIG, SIGKILL)` (and checks `getppid()` to close the race), so
+it is killed if `minibox exec` dies; without it an orphan would be reparented to the container's PID 1 and keep counting against `pids.max`. When stdin is
+not a terminal (scripts, the web UI) the child also becomes a process-group leader and SIGTERM/SIGINT/SIGHUP sent to `minibox exec` are turned into
+`kill(-pgid, SIGKILL)` (exit status 128+signal), which reaches grandchildren. With a terminal on stdin nothing changes except PDEATHSIG, so interactive
+`exec -- sh` keeps normal job control. SIGKILL of `minibox exec` cannot be forwarded: a grandchild may survive it. See `docs/src/exec.md`.
+
 ## Network topology (`--net veth`)
 ```
  host netns                                  container netns
@@ -127,11 +134,32 @@ Only created when `--memory`, `--cpus` or `--pids` is given. The PID is moved in
 so limits apply before `exec`. After exit: optional stats (`memory.peak`, `cpu.stat usage_usec`, `pids.peak`,
 `memory.events oom_kill`), OOM → exit 137, then the leaf is removed (`rmdir`, retried up to 1 s).
 
+## Web UI (Phase 5)
+```
+browser ──HTTP, 127.0.0.1 only, Bearer token──> ui/app.py (Flask, runs as root)
+                                                  │ validation.py  (whitelist every field)
+                                                  ▼
+                                          ui/minibox_client.py ──argv list, no shell, timeout──> ./minibox ──> state dir, cgroups, namespaces
+```
+- **The UI drives the CLI** instead of reimplementing it: `ps -a --json` is the machine-readable listing, `run -d`, `logs`, `stop`, `rm`
+  and `exec` do the work. The runtime stays the single source of truth and the UI is a thin, replaceable layer.
+- **Files:** `ui/app.py` (routes + security checks), `ui/minibox_client.py` (the only code that runs the binary), `ui/validation.py` (pure
+  validation), `ui/templates/index.html`, `ui/static/app.js`, `ui/static/style.css`; `scripts/setup_ui.sh` (venv + pinned Flask),
+  `scripts/run_ui.sh` (root, starts the server).
+- **API (all under `/api`, JSON, token required):** `GET /containers`, `POST /containers`, `GET /containers/<id>/logs?tail=N`,
+  `POST /containers/<id>/stop`, `DELETE /containers/<id>`, `POST /containers/<id>/exec`. Errors are always
+  `{"error": {"code", "message", "field"?}}` with 400/401/404/409/413/500/503.
+- **Security model:** loopback bind (non-loopback host refused), random token per start (`hmac.compare_digest`), `Host` header allow-list
+  (DNS rebinding), no CORS, CSP `default-src 'self'`, strict validation, body cap 16 KB, at most 10 running containers, rootfs chosen by the
+  server. **Limit:** a container here is not a hard security boundary (shared kernel, root, no user namespace/seccomp), so whoever can
+  reach the UI effectively has root; it must stay on localhost. Details: `docs/ui/app.md`.
+- **Not in scope:** live graphs or monitoring; the UI only manages containers.
+
 ## Planned components
 1. **Runtime core (C)** – namespaces, rootfs, network and cgroups done (Phases 1–3).
 2. **CLI + state store** – `run -d`, `ps`, `logs`, `stop`, `rm` done (Phase 4a); `exec` (`setns`) done (Phase 4b).
-3. **Web UI (Python Flask)** – lists and controls containers via the CLI (`ps --json`).
+3. **Web UI (Python Flask)** – done (Phase 5), see "Web UI" below.
 4. **Benchmarks** – startup time, limit enforcement, comparison to a bare process.
 
 ## Phases
-0. Setup · 1. Core isolation · 2. IPC/network · 3. cgroups · 4a. container management · **4b. exec** · 5. Web UI · 6. Benchmarks
+0. Setup · 1. Core isolation · 2. IPC/network · 3. cgroups · 4a. container management · 4b. exec · **5. Web UI** · 6. Benchmarks

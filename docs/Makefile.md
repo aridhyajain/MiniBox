@@ -16,11 +16,14 @@ Single entry point for building, setup and test instructions.
 | `build/%.o` | compiles one source file | creates `build/` |
 | `check-env` | runs `scripts/check_env.sh` | non-zero exit if a check fails |
 | `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
-| `test` | builds, then prints the sudo commands for all five test scripts | never runs sudo itself |
+| `test` | builds, then prints the sudo commands for all six test scripts | never runs sudo itself |
 | `test-all` | builds, then prints `sudo bash tests/run_all.sh` (runs every test script, prints a summary) | never runs sudo itself |
 | `test-phase3` | builds, then prints `sudo tests/phase3_test.sh` | never runs sudo itself |
 | `test-phase4` | builds, then prints `sudo tests/phase4_test.sh` | never runs sudo itself |
 | `test-phase4b` | builds, then prints `sudo tests/phase4b_test.sh` | never runs sudo itself |
+| `test-phase5` | builds, then prints the commands for the UI tests (`scripts/setup_ui.sh`, `sudo tests/phase5_test.sh`, the unit tests) | never runs sudo itself |
+| `ui-setup` | prints `scripts/setup_ui.sh` (creates `ui/venv`, no sudo) | prints only |
+| `ui-run` | builds, then prints `sudo scripts/run_ui.sh 8080` | prints only; never runs sudo itself |
 | `demo` | builds, then prints the commands to run the Review 1 demo | never runs sudo itself |
 | `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
@@ -41,6 +44,9 @@ make test       # prints the sudo commands
 make test-phase3
 make test-phase4
 make test-phase4b
+make test-phase5
+make ui-setup    # prints scripts/setup_ui.sh
+make ui-run      # prints sudo scripts/run_ui.sh 8080
 make test-all   # prints: sudo bash tests/run_all.sh
 make clean
 ```

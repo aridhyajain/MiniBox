@@ -64,5 +64,6 @@ More detail: `docs/VIVA_NOTES.md`.
 - **Networking is minimal.** Fixed 10.0.0.0/24, so one `--net veth` container at a time; no NAT, no DNS, no internet inside the container. The veth is created by running the host `ip` command (a documented tradeoff against hand-written netlink).
 - **No cgroup namespace:** the container can see its host cgroup path. The parent `/sys/fs/cgroup/minibox` is kept between runs.
 - **PID 1 is the user's command.** There is no init/reaper (like `tini`), so zombies are not reaped and a PID 1 without a SIGTERM handler ignores SIGTERM sent from inside the container.
+- **Orphans are not reaped.** Because PID 1 never calls `wait()`, orphans reparented to it (e.g. after a killed `minibox exec`) stay as zombies, so long-running containers can accumulate them. They are not running and not in `cgroup.procs`, but `pids.current` counts them. An optional `--init` flag (a small reaping PID 1) is future work.
 - **No CLI yet:** `ps`, `stop`, `exec`, `logs`, the Flask UI and benchmarks are planned for later phases; containers run in the foreground.
 - **WSL2 notes:** needs cgroup v2 (`scripts/check_env.sh` checks it); `/dev` nodes are created with `mknod`, falling back to bind-mounting the host's if refused; CPU percentages are noisy under WSL2 scheduling, so the cpu test uses a wide tolerance (35–65 %).

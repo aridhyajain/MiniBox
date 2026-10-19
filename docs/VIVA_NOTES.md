@@ -240,3 +240,108 @@ it needs a running container, joins its existing namespaces and cgroup with `set
 dies without affecting the container, and the container's `exit_code` is unchanged). `exec` uses `fchdir`+`chroot` on the saved root,
 not `pivot_root`, because the mount namespace is already set up. It also has no cleanup duty: the container's monitor still owns the
 cgroup and veth. Like `docker exec`, the exec'd process dies with the container, because killing the init kills every process in the PID namespace.
+
+### What happens to a command started by `exec` if `minibox exec` is killed?
+It becomes an **orphan**. In Linux a process whose parent dies is adopted by another process: normally PID 1, but inside a PID namespace that is the
+**namespace's own init**, i.e. the container's PID 1 (`sleep` or `sh`). The orphan keeps running in the container and in its cgroup, so it still counts
+against `pids.max`. The container's init does not even have to reap it quickly; if it is a plain `sleep` it never calls `wait`, so the orphan's zombie is not
+reaped either. The fix is in `exec.c`, below.
+
+### What does `PR_SET_PDEATHSIG` do, and what are its limits?
+`prctl(PR_SET_PDEATHSIG, SIGKILL)` tells the kernel: "when my parent process dies, send me SIGKILL". The child calls it right after `fork`, and the setting
+survives `execve`, so it applies to the command. Limits: (1) it is **not inherited** by the command's own children, so a grandchild is not covered;
+(2) there is a **race**: the parent may die before the `prctl` call, so the child re-checks `getppid()`: its parent is on the host, outside the
+container's PID namespace, where a process cannot see it, so `getppid()` is 0 while it lives and non-zero (the container's init) once orphaned;
+(3) it is cleared when the process changes credentials via a set-uid program; (4) it fires when the *thread* that created the child exits, which is fine for our single-threaded parent.
+
+### Why does a process group let one signal reach grandchildren?
+Every process belongs to a process group, and `kill(-pgid, sig)` sends the signal to every member. A child inherits its parent's group, so if the
+command is made the leader of a new group with `setpgid(0,0)`, the shell it runs and every program that shell starts are in the same group, and one
+`kill(-pgid, SIGKILL)` removes them all. The parent calls `setpgid(child, child)` too, because either side might run first. The signal handler in the parent
+may only use async-signal-safe calls (`kill` is one; `printf` and `malloc` are not), so it stores the signal number and kills; the main code then reaps
+the child and exits with 128 + the signal. A program can leave the group (`setsid`/`setpgid`), and **SIGKILL of `minibox exec` cannot be forwarded**
+because nothing can run after SIGKILL, so a grandchild can survive that one case (the direct child still dies through PDEATHSIG).
+
+### Why are interactive terminals handled differently?
+With a terminal (`exec -- sh`), the shell must stay in the terminal's **foreground process group**. A process in another group that reads the terminal
+gets SIGTTIN and is stopped; Ctrl-C is delivered to the foreground group, so it would no longer reach the shell. So when `isatty(0)` is true, `exec` keeps the old
+behaviour (same group, ignore SIGINT/SIGQUIT while waiting). When stdin is a pipe or `/dev/null` (scripts, the web UI) there is no terminal and no job control, so
+the own-group and signal-forwarding approach is safe.
+
+## Phase 5 – the web UI
+
+### What is the UI, in one sentence?
+A small local web page (Flask, Python) that lets you launch, list, stop, remove, read the logs of and run commands in containers. It only
+manages containers: no live graphs, no monitoring. The project is still a container runtime, not a monitoring tool.
+
+### Why does the UI drive the CLI instead of reimplementing it?
+The runtime logic (namespaces, cgroups, state files, cleanup) already exists and is tested in C. If the UI had its own copy in Python, there
+would be two implementations that can disagree. So every button is one call of `minibox run -d`, `ps`, `logs`, `stop`, `rm` or `exec`.
+The CLI is the single source of truth; the UI is a thin layer on top that can be replaced without touching the runtime.
+
+### What is `ps --json` for?
+`ps` prints a table for people. A program should not parse a table with spaces and truncated columns. `ps -a --json` prints the same data
+as a JSON array (ID, name, status, PIDs, exit code, times, command, rootfs, hostname, net, limits, IP), so the UI reads it with
+`json.loads`. Status `dead` is computed by the CLI at read time (the monitor process is gone but the file still says `running`).
+
+### Why is `shell=True` never used?
+With `shell=True` the command line goes to `/bin/sh`, which interprets `;`, `|`, `$(...)`, backticks and newlines. A name like
+`x; rm -rf /` would run a second command as root. The UI instead builds an argument **list** (`[binary, "run", "-d", "--name", name, ...]`)
+and `subprocess` calls `execve` directly, so each value is exactly one argument and nothing is interpreted. The user's command is split
+with `shlex.split` and placed after `--`, so `; rm -rf /` becomes the four literal arguments `;`, `rm`, `-rf`, `/` for `execvp`.
+Validation on top of that is defence in depth: a whitelist for every field, and the rootfs path is chosen by the server, never by the browser.
+
+### What is the security model?
+The UI runs as root (minibox needs it) and can run commands, so:
+1. It listens on `127.0.0.1` only; a non-loopback `--host` is refused. Other computers cannot connect.
+2. A random token is generated at every start and printed once. Every `/api` request must send it as `Authorization: Bearer ...`,
+   compared with `hmac.compare_digest` (constant time, so response time does not leak how much matched). The page takes it from the URL,
+   keeps it in `sessionStorage` and removes it from the address bar.
+3. The `Host` header must be `127.0.0.1:<port>` or `localhost:<port>`. This blocks DNS rebinding: a malicious site could make its own
+   hostname resolve to 127.0.0.1 and have your browser talk to the UI; the Host header would then show the attacker's name.
+4. No CORS headers, so other web sites cannot read answers. The token is a header, not a cookie, so a hostile page cannot make your browser
+   send it (no CSRF). CSP `default-src 'self'` and `Referrer-Policy: no-referrer` keep the page self-contained and the token out of referrers.
+5. Strict validation of every field, a 16 KB body cap, at most 10 running containers, 10 s limit on `exec`, container output escaped on the page
+   (`textContent`, never `innerHTML`).
+
+### What are the limits of this model?
+- **A container is not a hard security boundary.** It shares the host kernel, runs as root without a user namespace, and has no seccomp filter,
+  no dropped capabilities, no read-only `/proc` paths. A malicious program inside might escape, and anyone who can use the UI can run commands
+  as root on the host. That is why it must stay on localhost and why the token URL must be kept private.
+- The token protects against other web pages and other users who do not know it. It does not help if the machine is already compromised, and it
+  travels over plain HTTP (acceptable on loopback; it would not be on a network).
+- Flask's built-in server is for development; fine for one local user, not for the internet.
+- `exec` time limit: killing the host-side `minibox exec` client would not stop the process inside the container (it is in another PID namespace),
+  so the command is wrapped with busybox `timeout -s KILL 10` inside the container.
+
+### Why does `logs` read through the CLI and tail in Python?
+`minibox logs` prints the whole log and has no `--tail`. The UI reads at most 4 MB of it and keeps the last N lines (default 200), so a runaway
+log cannot fill the server's memory.
+
+### How does the exec time limit work, and why two layers?
+The UI runs `minibox exec <id> -- timeout -s KILL 10 <command>`: the busybox `timeout` inside the container kills a long command after 10 s, so the
+normal timeout does not depend on the host side at all. As a second layer, if `minibox exec` itself is still running after 13 s (or the output is too big), the
+UI sends it SIGTERM; `minibox exec` then kills the command's whole process group and exits with 143. If it does not exit within 2 s the UI sends SIGKILL, and
+the kernel kills the command's direct child through `PR_SET_PDEATHSIG`. Killing only the client, as the first version did, would leave the command running
+as an orphan under the container's PID 1 (see Phase 4). Remaining gap: after SIGKILL a grandchild may survive until it ends or the container is stopped.
+
+### What is a zombie process, and why does minibox leave some behind?
+A **zombie** is a process that has already exited but whose entry in the process table is still there, because its parent has not yet called
+`wait()` to collect its exit status. It uses no CPU or memory beyond that entry, and it shows as `<defunct>` (state `Z`) in `ps`. It cannot be killed
+(it is already dead); only its parent reaping it, or the parent dying, removes it.
+
+**Orphans and the PID namespace's init.** When a parent dies before its children, the kernel must give the children a new parent. Inside a PID
+namespace that is the namespace's PID 1 (outside, it would be the host's init). So when `minibox exec` kills a command's process group, the surviving
+children of the dead shell are reparented to the container's PID 1.
+
+**Why a PID 1 that never waits accumulates zombies.** On a normal system PID 1 loops on `wait()` and reaps every orphan. In minibox, PID 1 is just the
+user's command (`sleep 300`), which never calls `wait()`. Every orphan that later dies stays a zombie until the container ends. A long-running container
+can therefore fill its process table slots (and hit `--pids`).
+
+**`pids.current` vs `cgroup.procs`.** `pids.current` counts every task that still exists, zombies included. `cgroup.procs` lists only live processes.
+After SIGKILL of `minibox exec` the orphaned direct child may or may not be left as a zombie under the container's init, depending on timing and process layout; the test reports this (`INFO`) without failing and only asserts that the live count returns to baseline.
+That is why, after a killed `exec`, `pids.current` can be 2 while `cgroup.procs` shows only the init: the extra one is a zombie. The tests therefore
+count the lines of `cgroup.procs` (see `tests/lib.sh`) to ask "is anything still running?".
+
+**How Docker solves it.** `docker run --init` starts a tiny init program (`tini`) as PID 1 and runs the user's command as its child. `tini` forwards
+signals and calls `wait()` in a loop, so orphans are reaped. minibox does not have this yet; an optional `--init` flag is listed as future work.

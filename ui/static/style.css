@@ -1,0 +1,114 @@
+/* minibox UI styles. Colours are CSS variables; the dark theme follows the OS setting. */
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #1c2330;
+  --muted: #667085;
+  --border: #d9dde5;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --input-bg: #ffffff;
+  --out-bg: #11161f;
+  --out-text: #d6e2f0;
+  --ok-bg: #dcfce7;   --ok-text: #166534;
+  --run-bg: #dbeafe;  --run-text: #1e40af;
+  --bad-bg: #fee2e2;  --bad-text: #991b1b;
+  --err-bg: #fef2f2;  --err-border: #fca5a5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141c;
+    --card: #181f2b;
+    --text: #e6ebf3;
+    --muted: #93a0b4;
+    --border: #2b3445;
+    --accent: #5b8def;
+    --accent-text: #0b1220;
+    --input-bg: #111722;
+    --out-bg: #0a0e15;
+    --out-text: #cfe0f3;
+    --ok-bg: #14341f;   --ok-text: #86efac;
+    --run-bg: #14284d;  --run-text: #93c5fd;
+    --bad-bg: #3b1616;  --bad-text: #fca5a5;
+    --err-bg: #2a1414;  --err-border: #7f2d2d;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.top { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px 4px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: 22px; }
+main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; display: grid; gap: 16px; }
+h2 { margin: 0 0 12px; font-size: 17px; }
+h3 { margin: 18px 0 8px; font-size: 15px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.banner {
+  background: var(--err-bg); border: 1px solid var(--err-border); color: var(--bad-text);
+  border-radius: 8px; padding: 10px 14px; white-space: pre-wrap; word-break: break-word;
+}
+
+/* launch form */
+#launch-form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.wide { grid-column: 1 / -1; }
+input, select {
+  font: inherit; color: var(--text); background: var(--input-bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; min-width: 0; width: 100%;
+}
+input:focus, select:focus, button:focus-visible, .output:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+button {
+  font: inherit; cursor: pointer; color: var(--text); background: var(--card);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button.danger:hover:not(:disabled) { border-color: var(--bad-text); color: var(--bad-text); }
+
+/* containers table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+td.cmd { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td .btn-row { display: flex; gap: 6px; white-space: nowrap; }
+tr.selected td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.running { background: var(--run-bg); color: var(--run-text); }
+.badge.exited  { background: var(--ok-bg);  color: var(--ok-text); }
+.badge.dead    { background: var(--bad-bg); color: var(--bad-text); }
+
+/* detail panel */
+.detail-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.output {
+  margin: 8px 0 0; padding: 10px 12px; min-height: 3em; max-height: 320px; overflow: auto;
+  background: var(--out-bg); color: var(--out-text); border-radius: 8px;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+.exec { display: flex; gap: 8px; }
+.exec input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#exec-status { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  #launch-form { grid-template-columns: 1fr 1fr; }
+  .top { padding-top: 12px; }
+}
+@media (max-width: 460px) {
+  #launch-form { grid-template-columns: 1fr; }
+  .exec { flex-direction: column; }
+}

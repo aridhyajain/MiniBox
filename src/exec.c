@@ -13,6 +13,14 @@
  *  - After joining the mount namespace /proc and /sys/fs/cgroup are the
  *    container's, so everything that needs the host's view (the ns files, the
  *    cgroup tree) is opened or written BEFORE the mount namespace is joined.
+ *
+ * Dying together: if `minibox exec` is killed, an orphaned command would be
+ * reparented to the container's PID 1 and keep running (and keep counting
+ * against the container's pids limit). So the child asks the kernel to
+ * SIGKILL it when its parent dies (PR_SET_PDEATHSIG), and when stdin is not a
+ * terminal (scripts, the web UI) the command also gets its own process group,
+ * so one signal sent to `minibox exec` is turned into a SIGKILL for the
+ * whole group, grandchildren included.
  */
 #define _GNU_SOURCE
 #include "exec.h"
@@ -28,6 +36,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -48,6 +58,19 @@ static const struct ns_entry NAMESPACES[] = {
 };
 #define N_NAMESPACES (sizeof(NAMESPACES) / sizeof(NAMESPACES[0]))
 
+/*
+ * Set by the signal handler while a non-interactive command runs: the child's
+ * PID (which is also its process group ID) and the signal that arrived. This
+ * is the one piece of global state, because a signal handler cannot get
+ * arguments.
+ */
+static volatile pid_t g_child_pgid = 0;
+static volatile sig_atomic_t g_signal = 0;
+
+/* Signals that stop a non-interactive `minibox exec` and take the command with it. */
+static const int FORWARDED[] = { SIGTERM, SIGINT, SIGHUP };
+#define N_FORWARDED (sizeof(FORWARDED) / sizeof(FORWARDED[0]))
+
 /* Descriptors opened on the container's init before anything is joined. */
 struct target {
     int ns_fd[N_NAMESPACES];
@@ -61,6 +84,8 @@ static void usage_exec(void)
             "  Runs COMMAND inside a running container, sharing its namespaces and cgroup.\n"
             "  stdin/stdout/stderr are yours, so 'minibox exec <id> -- sh' is an interactive shell.\n"
             "  The exit status is the command's (128+N if it was killed by signal N).\n"
+            "  If minibox exec itself is killed, the command is killed too (when stdin is not a\n"
+            "  terminal, SIGTERM/SIGINT/SIGHUP also kill the command's whole process group).\n"
             "Must be run as root (sudo).\n");
 }
 
@@ -232,10 +257,42 @@ static int child_setup(const struct container_state *st, const struct target *t,
     return set_environment(term);
 }
 
+/*
+ * Make sure the command cannot outlive `minibox exec`.
+ *
+ * PR_SET_PDEATHSIG: the kernel sends us SIGKILL when the parent process dies.
+ * The parent may already have died before the prctl call, in which case the
+ * signal would never come, so the parent is checked afterwards. Our parent is
+ * on the host, outside the container's PID namespace, and a process cannot
+ * see a parent outside its namespace: getppid() is 0 while it is alive and
+ * becomes the container's init (non-zero) once we have been orphaned.
+ * The setting is kept across execve(), but not inherited by the command's own
+ * children, which is why group_mode also exists.
+ */
+static int die_with_parent(void)
+{
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL) == -1) {
+        perror("prctl(PR_SET_PDEATHSIG)");
+        return -1;
+    }
+    if (getppid() != 0) {
+        fprintf(stderr, "minibox: exec: minibox exec has already exited\n");
+        return -1;
+    }
+    return 0;
+}
+
 /* Runs as a child inside the container's PID namespace. Never returns. */
 static void child_main(const struct container_state *st, struct target *t,
-                       const char *term, char *const *argv)
+                       const char *term, char *const *argv, int group_mode)
 {
+    if (die_with_parent() == -1)
+        _exit(1);
+    /* Own process group: the parent can signal the command and all its children at once. */
+    if (group_mode && setpgid(0, 0) == -1) {
+        perror("setpgid");
+        _exit(1);
+    }
     if (child_setup(st, t, term) == -1)
         _exit(1);
     close_target(t);                    /* do not leak host descriptors into the command */
@@ -257,6 +314,8 @@ static int wait_for_child(pid_t pid)
             return 1;
         }
     }
+    if (g_signal != 0)                  /* we were told to stop: report 128+signal */
+        return 128 + (int)g_signal;
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
     if (WIFSIGNALED(status))
@@ -299,13 +358,71 @@ static void restore_interrupts(const struct sigaction *old_int,
 }
 
 /*
+ * Signal handler for SIGTERM/SIGINT/SIGHUP in group mode. Only async-signal-safe
+ * calls are allowed here: kill() and plain stores. SIGKILL goes to the whole
+ * process group (the command and everything it started) and to the child
+ * itself, in case it never became a group leader. The main flow then reaps
+ * the child in waitpid() and exits with 128+signal.
+ */
+static void kill_command(int sig)
+{
+    int saved_errno = errno;
+
+    g_signal = sig;
+    if (g_child_pgid > 0) {
+        kill(-g_child_pgid, SIGKILL);
+        kill(g_child_pgid, SIGKILL);
+    }
+    errno = saved_errno;
+}
+
+static int install_kill_handlers(struct sigaction old[N_FORWARDED])
+{
+    struct sigaction act;
+    size_t i;
+
+    memset(&act, 0, sizeof(act));
+    act.sa_handler = kill_command;
+    sigemptyset(&act.sa_mask);
+    for (i = 0; i < N_FORWARDED; i++) {
+        if (sigaction(FORWARDED[i], &act, &old[i]) == -1) {
+            perror("sigaction(forwarded signal)");
+            while (i-- > 0)
+                sigaction(FORWARDED[i], &old[i], NULL);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void restore_kill_handlers(const struct sigaction old[N_FORWARDED])
+{
+    size_t i;
+
+    for (i = 0; i < N_FORWARDED; i++)
+        sigaction(FORWARDED[i], &old[i], NULL);
+}
+
+/*
  * Join the PID namespace (affects only future children), fork, and let the
  * child do the rest. Returns the command's exit status, or -1 on a minibox error.
+ *
+ * Two modes:
+ *  - stdin is a terminal (interactive `exec -- sh`): the command stays in our
+ *    foreground process group so job control and Ctrl-C work as in any shell;
+ *    we ignore SIGINT/SIGQUIT while waiting. PR_SET_PDEATHSIG still applies.
+ *  - stdin is not a terminal (scripts, the web UI): "group mode", the command
+ *    is its own process group leader and SIGTERM/SIGINT/SIGHUP sent to us kill
+ *    that whole group.
+ * The three signals are blocked across fork() so that a signal arriving early
+ * waits until the handler is installed and the child's PID is known.
  */
 static int run_in_container(const struct container_state *st, struct target *t,
                             const char *term, char *const *argv)
 {
-    struct sigaction old_int, old_quit;
+    struct sigaction old_int, old_quit, old_fwd[N_FORWARDED];
+    sigset_t block, old_mask;
+    int group_mode = !isatty(STDIN_FILENO);
     pid_t pid;
     size_t i;
     int result;
@@ -313,20 +430,57 @@ static int run_in_container(const struct container_state *st, struct target *t,
     for (i = 0; i < N_NAMESPACES; i++)
         if (NAMESPACES[i].nstype == CLONE_NEWPID && join_namespace(t, i) == -1)
             return -1;
-    if (ignore_interrupts(&old_int, &old_quit) == -1)
+    sigemptyset(&block);
+    for (i = 0; i < N_FORWARDED; i++)
+        sigaddset(&block, FORWARDED[i]);
+    if (sigprocmask(SIG_BLOCK, &block, &old_mask) == -1) {
+        perror("sigprocmask");
         return -1;
+    }
+    if (!group_mode && ignore_interrupts(&old_int, &old_quit) == -1) {
+        sigprocmask(SIG_SETMASK, &old_mask, NULL);
+        return -1;
+    }
+    g_child_pgid = 0;
+    g_signal = 0;
     pid = fork();
     if (pid == -1) {
         perror("fork");
-        restore_interrupts(&old_int, &old_quit);
+        if (!group_mode)
+            restore_interrupts(&old_int, &old_quit);
+        sigprocmask(SIG_SETMASK, &old_mask, NULL);
         return -1;
     }
     if (pid == 0) {
-        restore_interrupts(&old_int, &old_quit);
-        child_main(st, t, term, argv);
+        if (!group_mode)
+            restore_interrupts(&old_int, &old_quit);
+        if (sigprocmask(SIG_SETMASK, &old_mask, NULL) == -1) {
+            perror("sigprocmask");
+            _exit(1);
+        }
+        child_main(st, t, term, argv, group_mode);
     }
+    if (group_mode) {
+        /* The child does this too; doing it here as well closes the race either way. */
+        if (setpgid(pid, pid) == -1 && errno != EACCES && errno != ESRCH)
+            perror("setpgid(child)");
+        g_child_pgid = pid;
+        if (install_kill_handlers(old_fwd) == -1) {
+            kill(-pid, SIGKILL);
+            kill(pid, SIGKILL);
+            wait_for_child(pid);
+            sigprocmask(SIG_SETMASK, &old_mask, NULL);
+            return -1;
+        }
+    }
+    /* a signal that arrived since fork() is delivered now, with the handler in place */
+    if (sigprocmask(SIG_SETMASK, &old_mask, NULL) == -1)
+        perror("sigprocmask(restore)");
     result = wait_for_child(pid);
-    restore_interrupts(&old_int, &old_quit);
+    if (group_mode)
+        restore_kill_handlers(old_fwd);
+    else
+        restore_interrupts(&old_int, &old_quit);
     return result;
 }
 

@@ -10,6 +10,9 @@ ROOTFS="$ROOT_DIR/rootfs"
 CG_BASE=/sys/fs/cgroup/minibox
 FAILS=0
 
+# shellcheck source=lib.sh
+. "$ROOT_DIR/tests/lib.sh"
+
 if [ "$(id -u)" -ne 0 ]; then
     echo "This test must run as root: sudo tests/phase4b_test.sh"
     exit 1
@@ -207,7 +210,105 @@ else
     echo "SKIP: exec as a normal user (setpriv missing or minibox not executable by 'nobody')"
 fi
 
-# ---- 7. cleanup ----
+# ---- 7. the command dies with `minibox exec` (stdin is not a tty here) ----
+# Counts LIVE processes (cgroup.procs), not pids.current: see tests/lib.sh.
+base=$(live_count "$a")
+init_pid=$(field "$a" pid)
+
+"$MB" exec "$a" -- sleep 30 </dev/null >/dev/null 2>&1 &
+bg=$!
+sleep 1
+[ "$(live_count "$a")" -gt "$base" ]
+report_live "exec -- sleep 30 is running in the cgroup (live processes above baseline $base)" $? "$a" "$base"
+kill -TERM "$bg"
+wait_live "$a" "$base" 2
+report_live "SIGTERM to 'minibox exec -- sleep 30': the command is gone within 2 s" $? "$a" "$base"
+wait "$bg"
+code=$?
+[ "$code" -eq 143 ]
+report "minibox exec exits 128+15 after SIGTERM" $? "got $code"
+
+"$MB" exec "$a" -- sh -c 'sleep 30 & sleep 30' </dev/null >/dev/null 2>&1 &
+bg=$!
+sleep 1
+[ "$(live_count "$a")" -ge $((base + 2)) ]
+report_live "exec -- sh -c 'sleep 30 & sleep 30' runs at least two sleeps (the shell may exec the last one)" $? "$a" "$base"
+kill -TERM "$bg"
+wait_live "$a" "$base" 2
+report_live "SIGTERM kills the grandchild too (process group): back to baseline within 2 s" $? "$a" "$base"
+wait "$bg" 2>/dev/null
+
+"$MB" exec "$a" -- sleep 30 </dev/null >/dev/null 2>&1 &
+bg=$!
+sleep 1
+kill -INT "$bg"
+wait_live "$a" "$base" 2
+report_live "SIGINT (no tty) also kills the command within 2 s" $? "$a" "$base"
+wait "$bg" 2>/dev/null
+
+# SIGKILL: the direct child is killed by PR_SET_PDEATHSIG. It dies (asserted below through the live
+# count). Its parent (minibox exec) is gone, so it is reparented to the container's PID 1, which never
+# wait()s, so it MAY stay behind as a zombie of the init. Whether that is visible depends on timing and
+# process layout, so it is only reported (INFO), never a failure.
+zombie_pids_of() {  # zombie_pids_of <host ppid>: PIDs in state Z whose parent is that PID
+    local s pid
+    for s in /proc/[0-9]*/stat; do
+        pid=${s#/proc/}
+        pid=${pid%/stat}
+        [ "$(proc_field "$pid" 1)" = Z ] && [ "$(proc_field "$pid" 2)" = "$1" ] && echo "$pid"
+    done
+}
+zombies_before=$(zombie_pids_of "$init_pid" | tr '\n' ' ')
+n_before=$(echo $zombies_before | wc -w)
+"$MB" exec "$a" -- sleep 30 </dev/null >/dev/null 2>&1 &
+bg=$!
+sleep 1
+kill -KILL "$bg"
+wait_live "$a" "$base" 2
+report_live "SIGKILL to 'minibox exec -- sleep 30': the direct child dies via PR_SET_PDEATHSIG within 2 s" $? "$a" "$base"
+wait "$bg" 2>/dev/null
+new_zombies=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    for z in $(zombie_pids_of "$init_pid"); do
+        case " $zombies_before " in *" $z "*) ;; *) new_zombies="$new_zombies $z" ;; esac
+    done
+    [ -n "$new_zombies" ] && break
+    sleep 0.1
+done
+n_after=$(zombie_pids_of "$init_pid" | wc -l)
+if [ -n "$new_zombies" ]; then
+    echo "INFO: SIGKILL case: a new zombie child of the container's init (host PID $init_pid) appeared:$new_zombies"
+else
+    echo "INFO: SIGKILL case: no new zombie child of the container's init (host PID $init_pid) appeared"
+fi
+if [ "$n_after" -gt "$n_before" ]; then
+    echo "INFO: zombie children of init: $n_before before, $n_after after (count went up)"
+else
+    echo "INFO: zombie children of init: $n_before before, $n_after after (count did not go up)"
+fi
+echo "INFO: processes whose parent is the init (pid ppid state cmd):"
+for d in /proc/[0-9]*; do
+    pid=${d#/proc/}
+    [ "$(proc_field "$pid" 2)" = "$init_pid" ] &&
+        echo "INFO:   $pid $init_pid $(proc_field "$pid" 1) $(cat "$d/comm" 2>/dev/null)"
+done
+echo "INFO: all zombies on the host (pid ppid state cmd):"
+for d in /proc/[0-9]*; do
+    pid=${d#/proc/}
+    [ "$(proc_field "$pid" 1)" = Z ] && echo "INFO:   $pid $(proc_field "$pid" 2) Z $(cat "$d/comm" 2>/dev/null)"
+done
+# Not checked on purpose: after SIGKILL of 'minibox exec', a grandchild (e.g. the second sleep in
+# 'sh -c "sleep 30 & sleep 30"') survives, because nothing can run after SIGKILL and PDEATHSIG is
+# not inherited by grandchildren. See docs/src/exec.md.
+
+out=$(exec_in "$a" sh -c 'exit 5'; echo "code $?")
+[ "$out" = "code 5" ]
+report "normal exit codes are unchanged after these changes (exit 5)" $? "got '$out'"
+[ "$(live_count "$a")" -le "$base" ]
+report_live "nothing is left running in the cgroup after the signal tests" $? "$a" "$base"
+note_zombies "$a"
+
+# ---- 8. cleanup ----
 "$MB" stop --time 1 "$a" >/dev/null
 "$MB" stop --time 1 "$b" >/dev/null
 out=$("$MB" exec "$a" -- true 2>&1)

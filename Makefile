@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -34,6 +34,7 @@ test: $(TARGET)
 	@echo "  sudo tests/phase3_test.sh"
 	@echo "  sudo tests/phase4_test.sh"
 	@echo "  sudo tests/phase4b_test.sh"
+	@echo "  sudo tests/phase5_test.sh     (needs 'make ui-setup' first)"
 	@echo "or all of them in one go:  make test-all"
 
 # One command for every test script (runs them all, prints a summary).
@@ -52,6 +53,22 @@ test-phase4: $(TARGET)
 test-phase4b: $(TARGET)
 	@echo "Phase 4b tests need root. Run:"
 	@echo "  sudo tests/phase4b_test.sh"
+
+test-phase5: $(TARGET)
+	@echo "Phase 5 tests need root and the UI environment. Run:"
+	@echo "  scripts/setup_ui.sh          # once, as your normal user (no sudo)"
+	@echo "  sudo tests/phase5_test.sh"
+	@echo "Unit tests (no root):  python3 -m unittest tests/test_ui_validation.py -v"
+
+# The web UI: make only prints the commands; setup needs no root, running the UI does.
+ui-setup:
+	@echo "Create the UI's Python environment (no sudo; needs internet for pip):"
+	@echo "  scripts/setup_ui.sh"
+
+ui-run: $(TARGET)
+	@echo "The UI must run as root (minibox needs it) and listens on 127.0.0.1 only. Run:"
+	@echo "  sudo scripts/run_ui.sh 8080"
+	@echo "Then open the URL it prints (it contains the access token)."
 
 demo: $(TARGET)
 	@echo "Review 1 demo needs root. Run:"

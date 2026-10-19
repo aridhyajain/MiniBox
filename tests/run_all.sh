@@ -2,10 +2,11 @@
 # run_all.sh - runs every minibox test script in order and prints a summary.
 # Usage: sudo bash tests/run_all.sh [-v]
 #   -v   show the full output of each script (default: only PASS/FAIL lines)
+# phase5_test.sh needs the UI environment first: scripts/setup_ui.sh (as your normal user).
 # Scripts that do not exist yet are skipped. Exit status: 0 if none failed, 1 otherwise.
 
 TESTS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRIPTS="phase1_test.sh phase2_test.sh phase3_test.sh phase4_test.sh phase4b_test.sh"
+SCRIPTS="phase1_test.sh phase2_test.sh phase3_test.sh phase4_test.sh phase4b_test.sh phase5_test.sh"
 VERBOSE=0
 
 if [ "$(id -u)" -ne 0 ]; then

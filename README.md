@@ -99,6 +99,24 @@ sudo ./minibox stop demo && sudo ./minibox rm demo
 `exec` works only on a `running` container and needs root. Processes started with `exec` belong to the container's
 cgroup, so its limits apply to them too.
 
+## Web UI (Phase 5)
+
+A local dashboard to launch, list, stop, remove, read logs of and `exec` into containers. It only calls the `minibox` CLI.
+
+```sh
+scripts/setup_ui.sh              # once, as your normal user (creates ui/venv, installs pinned Flask; no sudo)
+sudo scripts/run_ui.sh 8080      # starts the server on 127.0.0.1:8080 (root, because minibox needs it)
+# it prints:  minibox UI: http://127.0.0.1:8080/?token=<random token>   -> open that exact URL
+```
+
+- Open the printed URL in a browser. The page keeps the token in `sessionStorage`, removes it from the address bar and sends it as a
+  header; without the token every `/api` call returns 401. The token changes every time the server starts.
+- **From Windows:** WSL2 forwards `localhost`, so the same `http://127.0.0.1:8080/?token=...` URL opens in a normal Windows browser.
+- The server listens on `127.0.0.1` only and refuses other hosts. **Never expose it** (no port forwarding to the network, no proxy):
+  it can run commands as root, and a container is not a hard security boundary (shared kernel, no user namespace/seccomp).
+- Tests: `python3 -m unittest tests/test_ui_validation.py -v` (no root) and `sudo tests/phase5_test.sh` (needs `scripts/setup_ui.sh` first).
+  `make ui-setup` and `make ui-run` print the commands.
+
 ## Demo (Review 1)
 
 ```sh
@@ -111,3 +129,8 @@ See `docs/REVIEW1.md` for the presentation guide and likely viva questions. `mak
 ## Documentation
 
 See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md` and `docs/DEVLOG.md`. Every source file has a matching doc under `docs/`.
+
+## Known limitations
+- minibox does not yet reap orphans in the container's PID 1 (the user's command never calls `wait()`). Orphaned processes that die, for example after a
+  killed `minibox exec`, stay as zombies, so a long-running container can accumulate them. They do not run; `cgroup.procs` does not list them, but
+  `pids.current` counts them. An optional `--init` flag (a tiny reaping PID 1, like Docker's `--init`/`tini`) is future work.

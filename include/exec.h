@@ -10,6 +10,10 @@
  * stdout and stderr. Returns the command's exit status (128+N if killed by
  * signal N, 127 if it could not be executed), or 1 on a minibox error
  * (unknown or not running container, no command, not root, setup failure).
+ *
+ * The command dies with `minibox exec`: PR_SET_PDEATHSIG kills it if exec is
+ * killed, and when stdin is not a terminal SIGTERM/SIGINT/SIGHUP sent to exec
+ * kill the command's whole process group (exit status 128+signal).
  */
 int cmd_exec(int argc, char **argv);
 
