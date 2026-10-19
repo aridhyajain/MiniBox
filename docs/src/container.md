@@ -51,7 +51,7 @@ A signal arriving before `target_pid` is set is caught by the `stop_signal` chec
 | `set_hostname(name)` | hostname | 0 / -1 | `sethostname` in the UTS ns |
 | `child_handshake(p)` | pipes | 0 / -1 | writes `'R'`, blocks for `'G'`; "aborted by parent" on `'A'`/EOF |
 | `set_container_address(index)` | subnet index | 0 / -1 | `net_subnet_addrs` → `net_set_ipv4(eth0, 10.0.<index>.2, 24)` |
-| `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `set_container_address` → `chdir("/")` → PATH/HOME |
+| `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `set_container_address` → `chdir("/")` → PATH/HOME (`DEFAULT_PATH`, now defined in `container.h` and shared with `exec`) |
 | `child_main(arg)` | args | exit code | 1 on setup failure, 127 if `execvp` fails |
 | `parent_wait_ready(fd)` | fd | 0 / -1 | -1 on EOF (child died) or on a stop signal |
 | `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth only: `net_veth_setup(pid, cfg->net_index)` |

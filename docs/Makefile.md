@@ -5,7 +5,7 @@ Single entry point for building, setup and test instructions.
 
 ## Variables
 `CC=gcc`, `CFLAGS=-std=c11 -Wall -Wextra -Werror -g -Iinclude -MMD -MP`, `BUILD=build`,
-`TARGET=minibox`, `SRCS=src/main.c src/commands.c src/options.c src/monitor.c src/state.c src/container.c src/rootfs.c src/net.c src/cgroup.c`, `OBJS` = `build/*.o`.
+`TARGET=minibox`, `SRCS=src/main.c src/commands.c src/options.c src/monitor.c src/state.c src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c`, `OBJS` = `build/*.o`.
 `-MMD -MP` write `build/*.d` files so objects rebuild when a header changes (`-include` at the bottom).
 
 ## Targets
@@ -16,9 +16,11 @@ Single entry point for building, setup and test instructions.
 | `build/%.o` | compiles one source file | creates `build/` |
 | `check-env` | runs `scripts/check_env.sh` | non-zero exit if a check fails |
 | `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
-| `test` | builds, then prints the sudo commands for all four test scripts | never runs sudo itself |
+| `test` | builds, then prints the sudo commands for all five test scripts | never runs sudo itself |
+| `test-all` | builds, then prints `sudo bash tests/run_all.sh` (runs every test script, prints a summary) | never runs sudo itself |
 | `test-phase3` | builds, then prints `sudo tests/phase3_test.sh` | never runs sudo itself |
 | `test-phase4` | builds, then prints `sudo tests/phase4_test.sh` | never runs sudo itself |
+| `test-phase4b` | builds, then prints `sudo tests/phase4b_test.sh` | never runs sudo itself |
 | `demo` | builds, then prints the commands to run the Review 1 demo | never runs sudo itself |
 | `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
@@ -38,5 +40,7 @@ touch include/rootfs.h && make   # rebuilds container.o and rootfs.o
 make test       # prints the sudo commands
 make test-phase3
 make test-phase4
+make test-phase4b
+make test-all   # prints: sudo bash tests/run_all.sh
 make clean
 ```

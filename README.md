@@ -78,7 +78,26 @@ sudo tests/phase1_test.sh    # PID/UTS/mount/pivot_root checks
 sudo tests/phase2_test.sh    # IPC/network/veth checks
 sudo tests/phase3_test.sh    # cgroup limit checks
 sudo tests/phase4_test.sh    # run -d / ps / logs / stop / rm checks
+sudo tests/phase4b_test.sh   # exec checks
+sudo bash tests/run_all.sh   # all of the above, one PASS/FAIL line per script (make test-all prints this)
 ```
+
+## Run a command in a running container (Phase 4b)
+
+`exec` joins the namespaces and the cgroup of a running container (like `docker exec`). stdin/stdout/stderr are yours,
+so a shell is interactive, and the exit status is the command's.
+
+```sh
+sudo ./minibox run -d --name demo --hostname boxy --memory 64M -- sleep 300
+sudo ./minibox exec demo -- hostname           # boxy
+sudo ./minibox exec demo -- ps                 # PID 1 is sleep, plus the ps itself
+sudo ./minibox exec demo -- sh                 # interactive shell inside; 'exit' leaves it
+sudo ./minibox exec demo -- sh -c 'exit 7'; echo $?   # 7
+sudo ./minibox stop demo && sudo ./minibox rm demo
+```
+
+`exec` works only on a `running` container and needs root. Processes started with `exec` belong to the container's
+cgroup, so its limits apply to them too.
 
 ## Demo (Review 1)
 

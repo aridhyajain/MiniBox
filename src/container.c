@@ -35,7 +35,6 @@
 #include <unistd.h>
 
 #define STACK_SIZE (1024 * 1024)
-#define DEFAULT_PATH "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 #define MSG_READY 'R'
 #define MSG_GO    'G'

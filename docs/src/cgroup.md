@@ -26,6 +26,7 @@ concurrent container could be creating its leaf at that moment.
 | `long long cgroup_oom_kills(const struct cgroup *cg)` | leaf | `oom_kill` count, 0 if unknown | – |
 | `void cgroup_remove(struct cgroup *cg)` | leaf | – | `rmdir`, retried every 100 ms for up to 1 s while `EBUSY` (processes still exiting); on failure prints the `sudo rmdir` command |
 | `void cgroup_remove_leftover(const char *id)` | container ID | – | for `minibox rm` of a dead container: `rmdir box-<id>` via `cgroup_remove`; silent if the leaf does not exist (the container had no limits) |
+| `int cgroup_join_leaf(const char *id, pid_t pid)` | container ID, PID to move | 0 moved / 1 no cgroup / -1 | for `minibox exec`: `access(box-<id>)` (`ENOENT` → 1, the container has no limits), then `add_process` writes the PID to `cgroup.procs`. Must be called while the caller still sees the host's `/sys/fs/cgroup`. |
 | static `join`, `write_file`, `read_file`, `write_in`, `file_exists`, `has_word` | – | 0/-1 or bool | file helpers; `write_file` reports path + value + `strerror` because the kernel rejects bad values in `write()` |
 | static `enable_controllers(dir)` | cgroup dir | 0 / -1 | reads `cgroup.subtree_control`, writes `+memory`, `+cpu`, `+pids` only for missing ones |
 | static `prepare_base()` | – | 0 / -1 | enable on root → `mkdir minibox` (EEXIST ok) → enable on `minibox/` |

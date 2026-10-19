@@ -51,7 +51,7 @@ Real runtimes put a tiny init (`tini`) in front of the command for this reason.
 | `int cmd_stop(argc, argv)` | `--time N`, key | 0 / 1 | invalid `--time` (0..3600) |
 | `int cmd_rm(argc, argv)` | `-f`, key | 0 / 1 | refuses a running container without `-f` |
 | static `usage_run/ps/logs/stop/rm()` | – | – | usage message on stderr |
-| static `require_root()` | – | 0 / -1 | `geteuid() == 0`. Only `run` insists: `ps`/`logs`/`stop`/`rm` simply fail with a permission error on the 0700 state directory (which also lets them be tried without sudo on a scratch `MINIBOX_STATE_DIR`) |
+| `int require_root(void)` (shared via `commands.h`) | – | 0 / -1 | `geteuid() == 0`, else "must be run as root". `run` and `exec` insist (`exec` is in `src/exec.c`): `ps`/`logs`/`stop`/`rm` simply fail with a permission error on the 0700 state directory (which also lets them be tried without sudo on a scratch `MINIBOX_STATE_DIR`) |
 | static `sleep_ns(ns)` | – | – | `nanosleep` |
 | static `ellipsize`, `format_age`, `format_size`, `format_limits`, `ps_visible`, `print_table_row`, `print_table` | – | – | table output; control characters in a command become spaces |
 | static `json_string`, `json_str_field`, `print_json_object`, `print_json` | – | – | hand-written JSON writer |

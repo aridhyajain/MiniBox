@@ -43,6 +43,13 @@ int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
 /* Print memory.peak, cpu.stat usage_usec, pids.peak, oom_kill to stderr. */
 void cgroup_print_stats(const struct cgroup *cg);
 
+/*
+ * Move `pid` into the leaf box-<id> of an already running container (used by
+ * `exec`). Returns 0 if moved, 1 if the container has no cgroup (it was
+ * started without limits; nothing to do), -1 with a message on error.
+ */
+int cgroup_join_leaf(const char *id, pid_t pid);
+
 /* Number of OOM kills recorded in memory.events (0 if unknown). */
 long long cgroup_oom_kills(const struct cgroup *cg);
 

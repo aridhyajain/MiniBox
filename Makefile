@@ -4,10 +4,10 @@ CFLAGS  := -std=c11 -Wall -Wextra -Werror -g -Iinclude -MMD -MP
 BUILD   := build
 TARGET  := minibox
 SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
-           src/container.c src/rootfs.c src/net.c src/cgroup.c
+           src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-phase3 test-phase4 demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b demo
 
 all: $(TARGET)
 
@@ -33,6 +33,13 @@ test: $(TARGET)
 	@echo "  sudo tests/phase2_test.sh"
 	@echo "  sudo tests/phase3_test.sh"
 	@echo "  sudo tests/phase4_test.sh"
+	@echo "  sudo tests/phase4b_test.sh"
+	@echo "or all of them in one go:  make test-all"
+
+# One command for every test script (runs them all, prints a summary).
+test-all: $(TARGET)
+	@echo "All tests need root. Run:"
+	@echo "  sudo bash tests/run_all.sh"
 
 test-phase3: $(TARGET)
 	@echo "Phase 3 tests need root. Run:"
@@ -41,6 +48,10 @@ test-phase3: $(TARGET)
 test-phase4: $(TARGET)
 	@echo "Phase 4 tests need root. Run:"
 	@echo "  sudo tests/phase4_test.sh"
+
+test-phase4b: $(TARGET)
+	@echo "Phase 4b tests need root. Run:"
+	@echo "  sudo tests/phase4b_test.sh"
 
 demo: $(TARGET)
 	@echo "Review 1 demo needs root. Run:"

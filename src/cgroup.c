@@ -280,6 +280,24 @@ int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
     return add_process(cg->path, pid);
 }
 
+int cgroup_join_leaf(const char *id, pid_t pid)
+{
+    char leaf[CGROUP_PATH_LEN];
+    int n = snprintf(leaf, sizeof(leaf), "%s/box-%s", CGROUP_BASE, id);
+
+    if (n < 0 || (size_t)n >= sizeof(leaf)) {
+        fprintf(stderr, "minibox: cgroup path too long\n");
+        return -1;
+    }
+    if (access(leaf, F_OK) == -1) {
+        if (errno == ENOENT)
+            return 1;               /* no limits were set: no cgroup */
+        perror(leaf);
+        return -1;
+    }
+    return add_process(leaf, pid);
+}
+
 /* ---------------------------------- stats ---------------------------------- */
 
 /*

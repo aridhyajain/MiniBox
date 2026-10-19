@@ -5,6 +5,9 @@
 #include "cgroup.h"
 #include "net.h"
 
+/* PATH of every process started inside a container (run and exec). */
+#define DEFAULT_PATH "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 struct container_config {
     const char *rootfs;        /* absolute path of the root filesystem directory */
     const char *hostname;      /* hostname seen inside the container (UTS ns) */

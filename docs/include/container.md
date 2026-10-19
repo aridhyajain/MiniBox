@@ -4,6 +4,7 @@
 Public interface of the container module (used by `src/monitor.c`, implemented in `src/container.c`).
 
 ## Declarations
+- `DEFAULT_PATH` – the `PATH` of every process started in a container (`run` and `exec`).
 - `struct container_config`
   - `const char *rootfs` – absolute path of the root filesystem directory.
   - `const char *hostname` – hostname seen inside the UTS namespace.

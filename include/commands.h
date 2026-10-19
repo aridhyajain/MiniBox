@@ -8,6 +8,9 @@
  * success, 1 on any minibox error or usage error; cmd_run returns the
  * container command's exit status for foreground containers.
  */
+/* 0 if running as root, else prints "must be run as root" and returns -1. */
+int require_root(void);
+
 int cmd_run(int argc, char **argv);
 int cmd_ps(int argc, char **argv);
 int cmd_logs(int argc, char **argv);

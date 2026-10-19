@@ -153,7 +153,7 @@ a handler (SIGKILL from the parent namespace always works). So `minibox run -- t
 stops: busybox `timeout` execs the loop as PID 1, and its SIGTERM is dropped. The fix is to run it under a shell:
 `sh -c 'timeout 3 ...; true'`. A real container runtime solves this with a tiny init process (like `tini`).
 
-## Phase 4 – managing containers (run -d, ps, logs, stop, rm)
+## Phase 4 – managing containers (run -d, ps, logs, stop, rm, exec)
 
 ### Why is there a long-lived monitor process?
 A container is only a process in some namespaces. Somebody has to stay behind as its **parent**: only a parent can
@@ -205,3 +205,38 @@ gets 10.0.0.x. The interface names (`vethh<pid>`) were already unique because a 
 
 ### Why is the exit recorded after the cleanup?
 So that `stop` can trust the state: as soon as `status` is `exited`, the cgroup and the veth are already gone.
+
+### What does `setns` do?
+`setns(fd, nstype)` moves the **calling process** into an existing namespace, where `clone`/`unshare` create a new one.
+The fd refers to the namespace; `nstype` (e.g. `CLONE_NEWNET`) makes the kernel check that it really is that type. It needs
+`CAP_SYS_ADMIN` (root), and for the mount namespace also `CAP_SYS_CHROOT`. `exec` calls it for IPC, UTS, network, PID and mount.
+
+### How do `/proc/<pid>/ns/*` work?
+Each process has one entry per namespace kind in `/proc/<pid>/ns/` (`ipc`, `uts`, `net`, `pid`, `mnt`, ...). They look like
+symlinks (`net -> net:[4026532589]`, the number is the namespace's inode), but opening one gives a file descriptor for the
+namespace itself. Two processes with the same inode number share the namespace. An open descriptor also keeps the
+namespace alive even after all its processes are gone. We use the container's **init** PID from the state file, because the
+init is guaranteed to be inside every namespace the container has. `/proc/<pid>/root` is the same idea for the root directory.
+
+### Why does joining the PID namespace require a fork?
+A process's PID is fixed when it is created and is shown in its PID namespace; changing the namespace of a running process
+would change its own PID underneath it. So `setns(CLONE_NEWPID)` does not move the caller: only **children created
+afterwards** are placed in that namespace (the caller's `pid_for_children` changes, not its own `pid`). That is why `exec`
+calls `setns(pid)` in the parent and then `fork()`s: the child is the first process that really lives in the container's PID
+namespace and gets a small container PID (visible with `sh -c 'echo $$'`).
+
+### Why must the cgroup be joined before the mount namespace?
+The cgroup tree is a host file system path (`/sys/fs/cgroup/minibox/box-<id>/cgroup.procs`). After `setns(mnt)` the process sees
+the container's mount table, where `/sys/fs/cgroup` is not the real cgroup tree (inside the container it is missing or something else),
+so the path would not resolve. Same reason `exec` opens all `/proc/<pid>/ns/*` descriptors up front: after the mount namespace
+switch, `/proc` is the container's own, which does not show the host PID. Order: open descriptors → cgroup → ipc/uts/net → **mnt last** → chroot → exec.
+Writing the PID to `cgroup.procs` puts the process under the container's memory/cpu/pids limits (and OOM group), which is why
+`pids.current` rises while an `exec`'d command runs.
+
+### How does `exec` differ from `run`?
+`run` **builds** a container: `clone` with five `CLONE_NEW*` flags, `pivot_root` into the rootfs, mount `/proc` and `/tmp`, set the hostname,
+create the cgroup and veth, and the command becomes PID 1 with a monitor process that cleans up afterwards. `exec` builds nothing:
+it needs a running container, joins its existing namespaces and cgroup with `setns`, and starts one more process (not PID 1; it
+dies without affecting the container, and the container's `exit_code` is unchanged). `exec` uses `fchdir`+`chroot` on the saved root,
+not `pivot_root`, because the mount namespace is already set up. It also has no cleanup duty: the container's monitor still owns the
+cgroup and veth. Like `docker exec`, the exec'd process dies with the container, because killing the init kills every process in the PID namespace.

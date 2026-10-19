@@ -45,7 +45,7 @@ static void sleep_ns(long ns)
 }
 
 /* Namespaces, mounts and pivot_root all need CAP_SYS_ADMIN, i.e. root. */
-static int require_root(void)
+int require_root(void)
 {
     if (geteuid() != 0) {
         fprintf(stderr, "minibox: must be run as root (try: sudo ./minibox ...)\n");

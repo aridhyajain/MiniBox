@@ -1,10 +1,11 @@
 /*
  * main.c - subcommand dispatch for minibox.
  *
- * Usage: minibox run | ps | logs | stop | rm  [options]
+ * Usage: minibox run | ps | logs | stop | rm | exec  [options]
  * Each subcommand parses its own arguments (see commands.c).
  */
 #include "commands.h"
+#include "exec.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,7 @@ static const struct subcommand SUBCOMMANDS[] = {
     { "logs", cmd_logs },
     { "stop", cmd_stop },
     { "rm",   cmd_rm },
+    { "exec", cmd_exec },
 };
 #define N_SUBCOMMANDS (sizeof(SUBCOMMANDS) / sizeof(SUBCOMMANDS[0]))
 
@@ -33,6 +35,7 @@ static void usage(FILE *out)
             "  logs   show the output of a background container\n"
             "  stop   stop a running container\n"
             "  rm     remove a stopped (or dead) container\n"
+            "  exec   run a command inside a running container\n"
             "Run 'minibox <command>' without arguments for the options of a command.\n");
 }
 
