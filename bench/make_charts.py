@@ -149,6 +149,22 @@ def n_summary(measured):
     return ", ".join("%s n=%s" % (r["config"], r["n"]) for r in measured)
 
 
+def not_measured_note(config, note):
+    """One footnote line: 'Not measured: docker (docker CLI not found)'.
+
+    The CSV note already starts with 'not measured:' and sometimes with the
+    configuration name, so both prefixes are removed before the line is built."""
+    reason = (note or "").strip()
+    for prefix in ("not measured:", config + ":"):
+        if reason.lower().startswith(prefix.lower()):
+            reason = reason[len(prefix):].strip()
+    if reason.lower().startswith("not measured"):
+        reason = reason[len("not measured"):].strip(" :")
+    if not reason:
+        return "Not measured: %s" % config
+    return "Not measured: %s (%s)" % (config, reason)
+
+
 def startup_svg(rows):
     """Bar = median startup time on a log axis, whisker up to p95. Not-measured configs get a note."""
     measured = [r for r in rows if r.get("status") == "measured" and num(r.get("median_ms")) is not None]
@@ -179,9 +195,9 @@ def startup_svg(rows):
             body.append(t(cx, base - 8, "not measured", "note", "middle"))
         for k, line in enumerate(wrap_label(r["config"])):
             body.append(t(cx, base + 22 + 16 * k, line, "lbl", "middle"))
-    notes = ["%s: %s" % (r["config"], r.get("note", "not measured")) for r in missing]
+    notes = [not_measured_note(r["config"], r.get("note")) for r in missing]
     for j, n in enumerate(notes):
-        body.append(t(24, base + 58 + 16 * j, "Not measured - " + n, "note"))
+        body.append(t(24, base + 58 + 16 * j, n, "note"))
     n_txt = n_summary(measured)
     height = base + 72 + 16 * len(notes)
     return wrap(width, height, "Startup time per configuration",
@@ -255,8 +271,8 @@ def memory_svg(rows, incr):
         body.append(t(tx, y, labels[i]))
     ny = lay[-1][1] + 28
     if not any(v is not None for v in dock.values()):
-        note = next((r.get("note") for r in rows if r["config"] == "docker" and r.get("note")), "docker not measured")
-        body.append(t(24, ny, "Not measured - docker: " + note, "note"))
+        note = next((r.get("note") for r in rows if r["config"] == "docker" and r.get("note")), "")
+        body.append(t(24, ny, not_measured_note("docker", note), "note"))
         ny += 16
     for r in incr:
         v = num(r.get("incremental_bytes_per_container"))

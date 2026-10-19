@@ -66,5 +66,5 @@
 <text x="905.0" y="428.0" class="lbl" text-anchor="middle">limits</text>
 <text x="1055.0" y="382.0" class="note" text-anchor="middle">not measured</text>
 <text x="1055.0" y="412.0" class="lbl" text-anchor="middle">docker</text>
-<text x="24.0" y="448.0" class="note" text-anchor="start">Not measured - docker: not measured: docker CLI not found</text>
+<text x="24.0" y="448.0" class="note" text-anchor="start">Not measured: docker (docker CLI not found)</text>
 </svg>

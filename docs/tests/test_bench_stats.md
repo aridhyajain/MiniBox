@@ -11,7 +11,8 @@ Unit tests (standard `unittest`, no root) for `bench/stats.py`, `bench/make_char
 | `WorkloadTests.test_cpu_workload_uses_seconds`, `test_pids_workload_counts_children`, `test_exit_0_is_outside_quotes` | parameters appear in the string; the trailing exit is outside any quoted program |
 | `StartupConfigTests.test_migrate_row_follows_limits_row_with_the_same_command`, `test_only_the_migrate_row_gets_the_switch` | `minibox_limits_migrate` comes right after `minibox_limits`, runs the same command, there are 7 configurations; `startup_env` adds `MINIBOX_NO_CLONE3=1` to that row only and does not modify the base environment |
 | `ChartTests.test_all_charts_written_and_well_formed` | three SVGs written and parsed with `xml.etree` |
-| `ChartTests.test_missing_docker_is_noted` | "not measured" and the reason appear in the startup and memory charts |
+| `ChartTests.test_missing_docker_is_noted` | the line `Not measured: docker (docker CLI not found)` appears in the startup and memory charts, with no repeated "docker" or "not measured" |
+| `ChartTests.test_not_measured_note_text` | `not_measured_note` strips repeated prefixes and handles an empty note |
 | `ChartTests.test_text_is_escaped` | special characters survive as text and no raw `<b>` appears; OK, FAIL, ERROR and TIMEOUT rows all rendered (the fixture has one of each; the subtitle counts ERROR/TIMEOUT) |
 | `ChartTests.test_missing_csv_is_skipped` | a missing CSV skips that chart only |
 | `ChartTests.test_seven_startup_labels_do_not_overlap_and_fit`, `test_wrap_label_and_n_summary` | with 7 configurations no two category or bar labels in the same row overlap (estimated 7 px per character) and all fit inside the SVG width; label wrapping at underscores; the `n=` summary |

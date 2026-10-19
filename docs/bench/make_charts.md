@@ -4,7 +4,7 @@
 Turns a results directory written by `bench.py` into three SVG charts, with the standard library only (no matplotlib, no pip, works offline, no root):
 `startup.svg` (bar = median, whisker to p95, per configuration, log-scale y axis), `memory.svg` (memory per container for 1/5/10 containers), `limits.svg` (table of
 expected vs measured with the status `OK`/`FAIL`/`ERROR`/`TIMEOUT` as text and a mark: ✓, ✗, ⚠; the subtitle counts ERROR/TIMEOUT rows. Old CSVs with a `result` column are still read). Colours are CSS variables with a `prefers-color-scheme: dark` override.
-A configuration that was not measured (for example docker) gets a "not measured" note in the chart. All CSV text goes through `xml.sax.saxutils.escape`.
+A configuration that was not measured (for example docker) gets one footnote line in the chart, `Not measured: docker (docker CLI not found)` (see `not_measured_note`). All CSV text goes through `xml.sax.saxutils.escape`.
 
 ## Usage
 `python3 bench/make_charts.py [RESULTS_DIR] [--out DIR]` (default `bench/results/latest`; charts are written next to the CSVs unless `--out`). Exit 0 if at least one chart was written, 1 otherwise.
@@ -25,6 +25,7 @@ A configuration that was not measured (for example docker) gets a "not measured"
 | `legend_layout(items, left, width, y0)` | legend labels | `(x, y, text_x, text_end)` per entry; wraps to a new row so entries never overlap | – |
 | `wrap_label(name, max_chars=16)` | configuration name | list of lines (split at underscores) | – |
 | `n_summary(measured)` | measured rows | `"n=30 per configuration"` when all `n` are equal, else one `name n=..` per row | – |
+| `not_measured_note(config, note)` | configuration name, note text from the CSV (may be empty or `None`) | `"Not measured: <config> (<reason>)"`, or `"Not measured: <config>"` without a reason; a leading `not measured:` or `<config>:` in the note is removed so nothing is repeated | – |
 | `startup_svg(rows)` | rows of `startup_summary.csv` | SVG string: **log** y axis (ticks cover the data and stop one tick above the largest p95; "log scale" in subtitle and axis title), one label above each bar, whisker to p95, at least `MIN_STARTUP_SLOT` (150 px) per bar so 7 configurations do not overlap (the SVG grows wider), two-line category labels, "not measured" slot | – |
 | `memory_svg(rows, incr)` | rows of `memory.csv`, rows of `memory_incremental.csv` | SVG string (y axis max chosen from the data incl. the host line; wrapped legend; minibox cgroup / init PSS / monitor PSS bars, host sleep dashed line, docker note) | – |
 | `limits_svg(rows)` | rows of `limits.csv` | SVG table string | – |
@@ -38,4 +39,4 @@ Only file I/O (`open`, `write`, `mkdir`) through Python.
 Not an OS concept; it presents the measurements. Reading the charts: see `docs/BENCHMARKS.md`.
 
 ## How to test
-`python3 -m unittest tests/test_bench_stats.py -v` (class `ChartTests`: all three files are well-formed XML, missing docker is noted, special characters are escaped, a missing CSV is skipped). `tests/phase6_test.sh` checks the charts on real data.
+`python3 -m unittest tests/test_bench_stats.py -v` (class `ChartTests`: all three files are well-formed XML, missing docker is noted once (`test_not_measured_note_text` checks the wording), special characters are escaped, a missing CSV is skipped). `tests/phase6_test.sh` checks the charts on real data.

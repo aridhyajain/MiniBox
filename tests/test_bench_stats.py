@@ -159,7 +159,19 @@ class ChartTests(unittest.TestCase):
         self.assertIn("docker CLI not found", svg)
         ET.fromstring(svg.split("?>", 1)[1])
         mem = make_charts.memory_svg(make_charts.read_csv(os.path.join(self.dir, "memory.csv")), [])
-        self.assertIn("Not measured - docker", mem)
+        self.assertIn("Not measured: docker (docker CLI not found)", mem)
+        self.assertIn("Not measured: docker (docker CLI not found)", svg)
+        for out in (svg, mem):
+            self.assertNotIn("docker: docker", out)
+            self.assertNotIn("not measured: docker CLI", out)
+
+    def test_not_measured_note_text(self):
+        f = make_charts.not_measured_note
+        self.assertEqual(f("docker", "not measured: docker CLI not found"),
+                         "Not measured: docker (docker CLI not found)")
+        self.assertEqual(f("docker", "docker: CLI missing"), "Not measured: docker (CLI missing)")
+        self.assertEqual(f("docker", ""), "Not measured: docker")
+        self.assertEqual(f("docker", None), "Not measured: docker")
 
     def test_text_is_escaped(self):
         svg = make_charts.limits_svg(make_charts.read_csv(os.path.join(self.dir, "limits.csv")))

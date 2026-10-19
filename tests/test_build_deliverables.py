@@ -760,7 +760,7 @@ class TreeTests(unittest.TestCase):
         for group in bd.TREE_GROUPS:
             table = bd.tree_table(group)
             self.assertTrue(table.startswith("| File | Purpose |"))
-        self.assertEqual(bd.tree_omitted(), ["ui/requirements.txt"])
+        self.assertEqual(bd.tree_omitted(), [])
 
 
 class AppendixTests(unittest.TestCase):
