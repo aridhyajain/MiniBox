@@ -11,7 +11,7 @@ None (markup). Elements `app.js` relies on, by `id`:
 | id | Role |
 |----|------|
 | `banner` | error messages (`role="alert"`, hidden when empty) |
-| `launch-form`, `f-command`, `f-name`, `f-hostname`, `f-memory`, `f-cpus`, `f-pids`, `f-net`, `launch-btn` | launch form |
+| `launch-form`, `f-command`, `f-name`, `f-hostname`, `f-memory`, `f-cpus`, `f-pids`, `f-net`, `f-init` (checkbox "Init (reap zombies, forward signals)"), `launch-btn` | launch form |
 | `empty`, `containers`, `rows` | empty state, table, table body |
 | `detail`, `detail-title`, `detail-close` | detail panel for the selected container |
 | `logs`, `logs-refresh` | log output (last 200 lines) and its refresh button |

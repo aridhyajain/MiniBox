@@ -15,10 +15,10 @@ same-origin `/api`. **Everything that comes from the server or from a container 
 | `el(tag, class, text)` | – | element | creates an element with `textContent` |
 | `formatMemory`, `formatLimits`, `formatAge` | numbers | text | `67108864` -> `64M`; `mem=64M cpu=0.5 pids=32`; `12s ago` |
 | `actionButton(...)` | label, id, action, handler | button | per-row button that stays disabled while its request runs (state kept in `pending`, so the 3 s re-render does not re-enable it) |
-| `renderTable()` | – | – | rebuilds the table body from `containers`; shows the empty state when there are none |
+| `renderTable()` | – | – | rebuilds the table body from `containers` (including an Init column: `yes` only if `init === true` in the JSON, else `-`); shows the empty state when there are none |
 | `refresh()` | – | Promise | `GET /api/containers`; one request at a time; closes the detail panel if its container vanished |
 | `stopContainer(c)`, `removeContainer(c)` | container | Promise | `POST .../stop`, `DELETE ...` (remove asks for confirmation) |
-| `launch(event)` | submit event | – | sends the form fields that are filled in; empty ones are omitted so the server applies defaults |
+| `launch(event)` | submit event | – | sends the form fields that are filled in; empty ones are omitted so the server applies defaults. The Init checkbox adds `init: true` (a real boolean) only when ticked, and is unticked after a successful launch |
 | `select(id)`, `closeDetail()`, `updateDetailHeader()` | – | – | the detail panel below the table (it is outside the table so polling does not wipe typed text or logs) |
 | `loadLogs()` | – | Promise | `GET .../logs?tail=200` into the `<pre>` |
 | `runExec(event)` | submit event | – | `POST .../exec`; shows output, exit code, and a note on the 10 s time limit or the 64 KB output cut |

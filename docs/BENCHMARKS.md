@@ -73,7 +73,7 @@ Charts adapt to light and dark browsers and are plain SVG files (open them in a 
 - **N is small** (30, or 5 in quick mode): p95 from 30 runs rests on one or two values. Use the same N when comparing.
 - **Results vary between runs**; one reference run is a sample, not a constant. `system.json` records the machine, kernel, seed and options.
 - The memory numbers depend on what is counted (PSS vs RSS vs `memory.current`); see section B. Page cache in `memory.current` is reclaimable.
-- **Workloads need a shell as PID 1.** The container's init ignores signals from inside its own PID namespace unless it has a handler, so a workload whose last command is exec'd as PID 1 (for example `timeout`) can hang the run. Every workload therefore ends with `; exit 0`, and each external call has a timeout. See `docs/VIVA_NOTES.md`, Phase 6.
+- **Workloads need a shell as PID 1.** The container's init ignores signals from inside its own PID namespace unless it has a handler, so a workload whose last command is exec'd as PID 1 (for example `timeout`) can hang the run. Every workload therefore ends with `; exit 0`, and each external call has a timeout. See `docs/VIVA_NOTES.md`, Phase 6. (With `minibox run --init` this particular hang cannot happen, because `timeout` is then the init's child, not PID 1; the benchmarks still run without `--init`, which is the default and what was measured.)
 - The CPU test needs a CPU not already saturated by other work; a busy host lowers the measured ratio.
 
 ## Results

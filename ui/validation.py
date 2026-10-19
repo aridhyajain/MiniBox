@@ -23,7 +23,7 @@ ID_RE = re.compile(r"^[0-9a-f]{12}$")
 MEMORY_RE = re.compile(r"^([0-9]{1,12})([KMG]?)$")
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,61}[A-Za-z0-9])?$")
 UNITS = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}
-LAUNCH_FIELDS = {"command", "name", "hostname", "memory", "cpus", "pids", "net"}
+LAUNCH_FIELDS = {"command", "name", "hostname", "memory", "cpus", "pids", "net", "init"}
 
 
 class ValidationError(ValueError):
@@ -127,6 +127,13 @@ def validate_net(value):
     return value
 
 
+def validate_init(value):
+    """--init switch: must be a real JSON boolean; "true", 1, "yes" and null are rejected."""
+    if not isinstance(value, bool):
+        raise ValidationError("init", "must be true or false")
+    return value
+
+
 def validate_command(value, field="command"):
     """Split a command line into argv with shlex (no shell ever sees it).
 
@@ -178,6 +185,7 @@ def validate_launch(payload, max_cpus=None):
         "cpus": validate_cpus(payload.get("cpus"), max_cpus),
         "pids": validate_pids(payload.get("pids")),
         "net": validate_net(payload.get("net")),
+        "init": validate_init(payload["init"]) if "init" in payload else False,
     }
 
 

@@ -20,6 +20,7 @@
 #define _GNU_SOURCE
 #include "container.h"
 #include "cgroup.h"
+#include "minit.h"
 #include "net.h"
 #include "rootfs.h"
 
@@ -265,6 +266,9 @@ static int child_setup(const struct child_args *args)
 /*
  * Runs as the first process (PID 1) of the new PID namespace.
  * Setup errors exit 1; a failed exec exits 127 (shell convention).
+ * Without --init the command replaces this process and is PID 1 itself; with
+ * --init this process stays PID 1 as a tiny init and runs the command as its
+ * child (minit.c).
  */
 static int child_main(void *arg)
 {
@@ -273,6 +277,8 @@ static int child_main(void *arg)
 
     if (child_setup(args) == -1)
         return 1;
+    if (args->cfg->init)
+        return minit_run(argv);
     execvp(argv[0], argv);
     /* only reached if exec failed */
     fprintf(stderr, "exec %s: %s\n", argv[0], strerror(errno));

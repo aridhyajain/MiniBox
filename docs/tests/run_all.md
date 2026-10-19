@@ -2,7 +2,7 @@
 
 ## Purpose
 One command that runs every test script in order and prints one `PASS`/`FAIL` line per script plus a summary:
-`phase1_test.sh`, `phase2_test.sh`, `phase3_test.sh`, `phase4_test.sh`, `phase4b_test.sh`, `phase5_test.sh` (the web UI; it needs `scripts/setup_ui.sh` run first, otherwise it fails with that hint), `phase6_test.sh` (benchmark tooling, about 1 minute). A script that does not exist is
+`phase1_test.sh`, `phase2_test.sh`, `phase3_test.sh`, `phase4_test.sh`, `phase4b_test.sh`, `phase5_test.sh` (the web UI; it needs `scripts/setup_ui.sh` run first, otherwise it fails with that hint), `phase6_test.sh` (benchmark tooling, about 1 minute), `init_test.sh` (`minibox run --init`, about 40 seconds). A script that does not exist is
 skipped (`SKIP:` line). Must be run as root (it refuses otherwise); it never calls sudo. `make test-all` prints the command.
 
 ## Usage

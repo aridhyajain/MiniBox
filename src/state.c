@@ -118,7 +118,8 @@ static void write_fields(FILE *f, const struct container_state *st)
     put_string(f, "rootfs", st->rootfs);
     put_string(f, "hostname", st->hostname);
     put_string(f, "net", st->net);
-    fprintf(f, "memory=%lld\ncpus=%g\npids=%ld\n", st->memory, st->cpus, st->pids);
+    fprintf(f, "memory=%lld\ncpus=%g\npids=%ld\ninit=%d\n", st->memory, st->cpus, st->pids,
+            st->init);
     put_string(f, "ip", st->ip);
 }
 
@@ -239,6 +240,8 @@ static void set_number_field(struct container_state *st, const char *key, const 
         st->cpus = strtod(val, NULL);
     else if (strcmp(key, "pids") == 0)
         st->pids = strtol(val, NULL, 10);
+    else if (strcmp(key, "init") == 0)
+        st->init = strtol(val, NULL, 10) != 0;      /* absent in older files: stays 0 */
     /* unknown keys are ignored so newer files can be read by older code */
 }
 
@@ -602,6 +605,7 @@ void state_init_from_config(struct container_state *st,
     st->memory = cfg->limits.memory_bytes;
     st->cpus = (double)cfg->limits.cpu_quota_us / CGROUP_CPU_PERIOD;
     st->pids = cfg->limits.pids_max;
+    st->init = cfg->init != 0;
 }
 
 /* Take the exclusive lock on <root>/.lock (creating the root first). Returns the fd. */

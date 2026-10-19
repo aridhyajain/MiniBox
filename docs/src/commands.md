@@ -8,7 +8,7 @@ directly, they read its state files (`src/state.c`) and send signals to the cont
 ## Usage
 ```
 minibox run  [-d] [--name NAME] [--rootfs DIR] [--hostname NAME] [--net none|veth]
-             [--memory N[K|M|G]] [--cpus X] [--pids N] [--stats] -- COMMAND [ARGS...]
+             [--memory N[K|M|G]] [--cpus X] [--pids N] [--stats] [--init] -- COMMAND [ARGS...]
 minibox ps   [-a] [--json]
 minibox logs [-f] <id|name>
 minibox stop [--time N] <id|name>
@@ -19,7 +19,7 @@ minibox rm   [-f] <id|name>
 - **run** – parse (`options.c`) → must be root → validate rootfs → register state (`state_create`) → foreground:
   `monitor_run_foreground` (state deleted at the end, exit status = the command's) / `-d`: `monitor_start_detached`,
   then print only the 12-hex ID. Foreground containers are registered too, so `ps` sees them while they run.
-- **ps** – table `ID NAME STATUS PID COMMAND CREATED LIMITS`, or `--json`. Default lists `running` **and `dead`**
+- **ps** – table `ID NAME STATUS PID INIT COMMAND CREATED LIMITS` (INIT is `yes` for a `--init` container, `-` otherwise), or `--json` (with `"init":true|false`). Default lists `running` **and `dead`**
   containers (a dead one still holds an init, cgroup and veth, so hiding it would hide the problem); `-a` adds `exited`.
   `dead` = stored `running`, but `kill(monitor_pid, 0)` says the monitor is gone.
   LIMITS looks like `mem=64M cpu=0.5 pids=32`, `-` if none. CREATED is `5s ago`, `3m ago`, `2h ago`, `1d ago`.
@@ -40,7 +40,9 @@ kernel delivers them to init only if init installed a handler for that signal �
 which are always delivered. A container whose init is plain `sleep` or `sh` has no `SIGTERM` handler, so SIGTERM is
 silently dropped and `stop` has to escalate to SIGKILL after the timeout. The container then ends with exit code
 137 (128 + 9). A program with a handler (e.g. `sh -c 'trap "exit 0" TERM; ...'`) stops on SIGTERM.
-Real runtimes put a tiny init (`tini`) in front of the command for this reason.
+Real runtimes put a tiny init (`tini`) in front of the command for this reason, and so does `minibox run --init`: the init keeps SIGTERM pending
+and forwards it to the command, so `stop` finishes at once and the container's exit code is 143 (128 + 15). The escalation in `stop` is unchanged (SIGTERM, wait, SIGKILL);
+it only becomes a fallback.
 
 ## Functions
 | Function | Inputs | Returns | Errors / side effects |

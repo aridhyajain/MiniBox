@@ -11,6 +11,7 @@ Public interface of the container module (used by `src/monitor.c`, implemented i
   - `enum net_mode net` – `NET_NONE` (loopback only) or `NET_VETH` (from `net.h`).
   - `struct cgroup_limits limits` – memory/cpu/pids limits (from `cgroup.h`); all 0 = no cgroup is created.
   - `int stats` – 1 = print cgroup usage after the container exits.
+  - `int init` – 1 = PID 1 is the tiny init of `src/minit.c` and the command runs as its child (`minibox run --init`).
   - `char *const *argv` – NULL-terminated command vector.
   - `const char *id` – container ID; the cgroup leaf is `box-<id>`.
   - `int net_index` – veth subnet `10.0.<n>.0/24` (veth only).

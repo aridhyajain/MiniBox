@@ -14,6 +14,7 @@ struct container_config {
     enum net_mode net;         /* NET_NONE (loopback only) or NET_VETH */
     struct cgroup_limits limits; /* all 0 = no cgroup is created */
     int stats;                 /* 1 = print cgroup usage after exit */
+    int init;                  /* 1 = PID 1 is a tiny init (minit.c) running the command */
     char *const *argv;         /* command to run, NULL-terminated, argv[0] = program */
     const char *id;            /* container ID: names the cgroup leaf box-<id> */
     int net_index;             /* veth subnet 10.0.<net_index>.0/24 (NET_VETH only) */

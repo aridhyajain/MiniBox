@@ -17,7 +17,7 @@ Directories are created with mode `0700`.
 ```
 `state` fields, one `key=value` per line: `id, name, status (running|exited), pid, monitor_pid, exit_code,
 created_at, started_at, finished_at, command, rootfs, hostname, net (none|veth), memory (bytes), cpus (cores),
-pids, ip`. `0` / empty means "not set". `pid` is the container's init as seen from the host; `monitor_pid` is the
+pids, init (0|1), ip`. `0` / empty means "not set"; `init=1` means the container was started with `--init` (files written before this field existed read as 0). `pid` is the container's init as seen from the host; `monitor_pid` is the
 process that waits for it. `dead` is never stored, it is computed (see `state_effective_status`).
 Backslash and line breaks inside values are escaped (`\\`, `\n`, `\r`) so a command can never break the format.
 

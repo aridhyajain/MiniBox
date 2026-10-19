@@ -1,12 +1,12 @@
 # tests/test_ui_validation.py
 
 ## Purpose
-Unit tests (`unittest`, no root, no Flask, no containers) for `ui/validation.py`. 37 tests cover valid values, boundaries, and
+Unit tests (`unittest`, no root, no Flask, no containers) for `ui/validation.py`. about 45 tests cover valid values, boundaries, and
 hostile input for every field.
 
 ## Functions
 Test classes (each method is one test case): `NameTests`, `HostnameTests`, `MemoryTests`, `CpusTests`, `PidsTests`, `NetTests`,
-`CommandTests`, `ContainerIdTests`, `TailTests`, `LaunchPayloadTests`, `ExecPayloadTests`. Shared data: `INJECTIONS`, a list of
+`InitTests`, `CommandTests`, `ContainerIdTests`, `TailTests`, `LaunchPayloadTests`, `ExecPayloadTests`. Shared data: `INJECTIONS`, a list of
 injection-style strings (`; rm -rf /`, `$(id)`, backticks, newline, carriage return, NUL, `../../etc/passwd`, `--rootfs=/`, `a&&b`,
 `<script>`...) that every non-command field must reject.
 
@@ -17,6 +17,7 @@ Highlights:
   256-character argument allowed, 257 rejected.
 - IDs and paths: `../../etc/passwd`, a trailing newline, upper-case hex and wrong lengths are rejected.
 - Launch payload: unknown fields such as `rootfs` are rejected, so the browser can never choose the rootfs.
+- `init`: only a real boolean is accepted; `"true"`, `"yes"`, `1`, `0`, `1.0`, `null`, lists and dicts are rejected; a missing `init` means false and is returned as `False`.
 
 ## System calls used and why
 None.

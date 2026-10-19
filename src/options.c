@@ -3,7 +3,7 @@
  *
  * Usage: minibox run [-d] [--name NAME] [--rootfs DIR] [--hostname NAME]
  *                    [--net none|veth] [--memory N[K|M|G]] [--cpus X]
- *                    [--pids N] [--stats] -- COMMAND [ARGS...]
+ *                    [--pids N] [--stats] [--init] -- COMMAND [ARGS...]
  *
  * The kernel interfaces want raw numbers (bytes for memory.max, quota/period
  * for cpu.max), people want "64M" and "0.5": this file does the translation
@@ -155,6 +155,17 @@ static int parse_option(const char *opt, const char *value,
     return 0;
 }
 
+/* With --init the init process and the command both count against pids.max. */
+static int check_init_pids(const struct container_config *cfg)
+{
+    if (cfg->init && cfg->limits.pids_max == 1) {
+        fprintf(stderr, "minibox: --init needs --pids of at least 2 "
+                "(the init and the command are two processes)\n");
+        return -1;
+    }
+    return 0;
+}
+
 /*
  * Fill opts from the arguments after "run" (argv[0] is "run"). Returns 0 on
  * success, -1 on a usage error. cfg.rootfs is still the user's (possibly
@@ -175,7 +186,7 @@ int options_parse_run(int argc, char **argv, struct run_options *opts)
             if (i + 1 >= argc)
                 return -1;              /* "--" but no command */
             cfg->argv = &argv[i + 1];
-            return 0;
+            return check_init_pids(cfg);
         }
         if (strcmp(argv[i], "--stats") == 0) {
             cfg->stats = 1;             /* a flag: takes no value */
@@ -183,6 +194,10 @@ int options_parse_run(int argc, char **argv, struct run_options *opts)
         }
         if (strcmp(argv[i], "-d") == 0) {
             opts->detach = 1;           /* a flag too */
+            continue;
+        }
+        if (strcmp(argv[i], "--init") == 0) {
+            cfg->init = 1;              /* and this one */
             continue;
         }
         if (i + 1 >= argc)

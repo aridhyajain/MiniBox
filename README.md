@@ -26,7 +26,7 @@ make test        # prints the command to run the tests
 
 ```sh
 sudo ./minibox run [-d] [--name NAME] [--rootfs DIR] [--hostname NAME] [--net none|veth] \
-                   [--memory N[K|M|G]] [--cpus X] [--pids N] [--stats] -- COMMAND [ARGS...]
+                   [--memory N[K|M|G]] [--cpus X] [--pids N] [--stats] [--init] -- COMMAND [ARGS...]
 
 # example: isolated shell, loopback only
 sudo ./minibox run --rootfs rootfs --hostname mybox -- /bin/sh
@@ -46,6 +46,18 @@ Without limits no cgroup is created. An OOM-killed container exits with 137. `--
 `--net none` gives only a loopback interface; `--net veth` adds a veth pair to the host (needs the host `ip` command).
 Every veth container gets its own subnet `10.0.n.0/24` (the lowest free `n`), so several can run at once.
 
+### `--init`: a tiny PID 1 (opt-in)
+```sh
+sudo ./minibox run -d --init --name web -- sleep 300
+sudo ./minibox exec web -- cat /proc/1/comm       # minibox-init  (the command is PID 2)
+time sudo ./minibox stop web                       # quick: SIGTERM is forwarded, exit code 143
+```
+By default the command itself is the container's PID 1. With `--init` PID 1 is a small init (`src/minit.c`, shown as `minibox-init`) and the command runs as its child.
+The init forwards SIGTERM, SIGINT, SIGHUP, SIGQUIT, SIGUSR1 and SIGUSR2 to the command, reaps every orphaned process with `waitpid(-1)` (no zombies), and exits
+with the command's status (128+N if it was killed by signal N). So `stop` of a normal program ends with 143 right away instead of waiting for the grace period and
+SIGKILL (137), and a program like busybox `timeout` can no longer hang the container by becoming PID 1. It costs one extra process per container; with `--pids` use at least 2.
+`ps` shows `yes` in the INIT column and `ps --json` has `"init":true`. The web UI has a matching checkbox. Without `--init` nothing changes.
+
 ## Manage containers (Phase 4a)
 
 Every container has an ID (12 hex characters) and a directory with its state in `/var/lib/minibox/containers/<id>/`
@@ -58,8 +70,8 @@ sudo ./minibox run -d --name demo --memory 64M -- sh -c 'while :; do date; sleep
 sudo ./minibox ps                 # running (and dead) containers
 sudo ./minibox ps -a              # also exited ones
 sudo ./minibox ps --json          # JSON array, for scripts and the future web UI
-# ID           NAME   STATUS   PID    COMMAND                  CREATED   LIMITS
-# 3fa9c01be274 demo   running  4121   sh -c while :; do da...  12s ago   mem=64M
+# ID           NAME   STATUS   PID    INIT COMMAND                  CREATED   LIMITS
+# 3fa9c01be274 demo   running  4121   -    sh -c while :; do da...  12s ago   mem=64M
 
 sudo ./minibox logs demo          # print the output so far
 sudo ./minibox logs -f demo       # follow until the container exits (Ctrl-C leaves it running)
@@ -68,8 +80,8 @@ sudo ./minibox rm demo            # delete the state and log of a stopped contai
 sudo ./minibox rm -f demo         # stop it first if it is running
 ```
 
-A plain `sleep` or `sh` as the container's PID 1 ignores SIGTERM (a PID-namespace init only gets signals it has a
-handler for), so `stop` normally ends with SIGKILL and exit code 137. A foreground `minibox run` is registered while it
+Without `--init`, a plain `sleep` or `sh` as the container's PID 1 ignores SIGTERM (a PID-namespace init only gets signals it has a
+handler for), so `stop` normally ends with SIGKILL and exit code 137. With `--init` it stops at once with 143. A foreground `minibox run` is registered while it
 runs (so `ps` shows it) and its state is deleted when it ends. If a background container's monitor process is killed,
 `ps` shows the container as `dead`; `rm` kills what is left of it and removes its cgroup and veth.
 
@@ -79,6 +91,7 @@ sudo tests/phase2_test.sh    # IPC/network/veth checks
 sudo tests/phase3_test.sh    # cgroup limit checks
 sudo tests/phase4_test.sh    # run -d / ps / logs / stop / rm checks
 sudo tests/phase4b_test.sh   # exec checks
+sudo bash tests/init_test.sh # --init checks (PID 1, reaping, exit codes, stop, limits, veth, exec)
 sudo bash tests/run_all.sh   # all of the above, one PASS/FAIL line per script (make test-all prints this)
 ```
 
@@ -166,6 +179,6 @@ Regenerate the tables with `python3 bench/make_report_tables.py bench/results/re
 See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md`, `docs/DEVLOG.md`, `docs/BENCHMARKS.md`, and the review guides `docs/REVIEW1.md` and `docs/REVIEW2.md`. Every source file has a matching doc under `docs/`.
 
 ## Known limitations
-- minibox does not yet reap orphans in the container's PID 1 (the user's command never calls `wait()`). Orphaned processes that die, for example after a
-  killed `minibox exec`, stay as zombies, so a long-running container can accumulate them. They do not run; `cgroup.procs` does not list them, but
-  `pids.current` counts them. An optional `--init` flag (a tiny reaping PID 1, like Docker's `--init`/`tini`) is future work.
+- Zombies: solved opt-in with `--init`; the default is still no reaping. Without `--init` the user's command is PID 1 and never calls `wait()`, so orphaned
+  processes that die, for example after a killed `minibox exec`, stay as zombies and a long-running container can accumulate them. They do not run;
+  `cgroup.procs` does not list them, but `pids.current` counts them. Use `run --init` (a tiny reaping PID 1, like Docker's `--init`/`tini`) for containers that need it.

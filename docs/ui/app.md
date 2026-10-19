@@ -40,7 +40,7 @@ other local users who do not know it; it does not protect against someone who al
 | `json_body()` | request | decoded JSON | `ValidationError` unless the body is JSON |
 | `index()` `GET /` | – | the HTML page | needs the Host check only (the page must load to read the token) |
 | `list_containers()` `GET /api/containers` | – | `{"containers": [...]}` | from `ps -a --json` |
-| `launch()` `POST /api/containers` | `command`, optional `name`, `hostname`, `memory`, `cpus`, `pids`, `net` | 201 `{"id"}` | 400, 409 (name used / limit reached), 413, 500 |
+| `launch()` `POST /api/containers` | `command`, optional `name`, `hostname`, `memory`, `cpus`, `pids`, `net`, `init` (boolean, strict) | 201 `{"id"}` | 400, 409 (name used / limit reached), 413, 500 |
 | `logs(cid)` `GET /api/containers/<id>/logs?tail=N` | ID, tail 1-1000 (default 200) | `{"id", "logs", "lines", "truncated"}` | 400, 404 |
 | `stop(cid)` `POST /api/containers/<id>/stop` | ID | `{"id", "message"}` | 400, 404 |
 | `remove(cid)` `DELETE /api/containers/<id>` | ID | `{"id", "removed": true}` | 400, 404 |

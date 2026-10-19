@@ -34,6 +34,10 @@
             <option value="veth">veth (own IP)</option>
           </select>
         </label>
+        <label class="wide check">
+          <input type="checkbox" id="f-init" name="init">
+          Init (reap zombies, forward signals)
+        </label>
         <div class="wide actions">
           <button id="launch-btn" type="submit" class="primary">Launch</button>
           <span class="muted">Limits are optional. The command runs inside the project's Alpine rootfs.</span>
@@ -48,7 +52,7 @@
         <table id="containers" hidden>
           <thead>
             <tr>
-              <th>ID</th><th>Name</th><th>Status</th><th>Command</th><th>Limits</th>
+              <th>ID</th><th>Name</th><th>Status</th><th>Init</th><th>Command</th><th>Limits</th>
               <th>IP</th><th>Exit</th><th>Created</th><th>Actions</th>
             </tr>
           </thead>

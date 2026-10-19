@@ -52,6 +52,10 @@ A command that leaves its process group (`setsid`, `setpgid`) also escapes the g
 and are removed by `stop`/`rm` (killing the container's init kills the whole PID namespace). In a normal exit the parent does nothing about leftover
 background processes (as before). `getppid() != 0` assumes `minibox exec` runs outside the container's PID namespace (always true for the host binary).
 
+**With `--init`.** If the container was started with `run --init`, its PID 1 is `minibox-init` (`src/minit.c`), which reaps orphans with `waitpid(-1)`. A command left behind by a
+killed `minibox exec` is then reparented to the init and cleaned up as soon as it dies: no zombie, and `pids.current` goes back to the baseline. `exec` itself needs no change:
+`state_pid_is_ns_init` still sees PID 1 in the container's namespace, and `setns` + the cgroup join work the same.
+
 ## Functions
 | Function | Inputs | Returns | Errors / side effects |
 |----------|--------|---------|-----------------------|

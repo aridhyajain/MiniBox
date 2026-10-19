@@ -200,18 +200,42 @@ class TailTests(unittest.TestCase):
                 v.validate_tail(value)
 
 
+class InitTests(unittest.TestCase):
+    def test_booleans_accepted(self):
+        self.assertIs(v.validate_init(True), True)
+        self.assertIs(v.validate_init(False), False)
+
+    def test_everything_else_rejected(self):
+        for value in ["true", "false", "True", "yes", "on", "1", "", 1, 0, 1.0, None, [], [True],
+                      {}, {"a": 1}] + INJECTIONS:
+            with self.assertRaises(v.ValidationError, msg=repr(value)):
+                v.validate_init(value)
+
+
 class LaunchPayloadTests(unittest.TestCase):
     def test_full_payload(self):
         opts = v.validate_launch({"command": "sleep 300", "name": "web", "hostname": "box",
-                                  "memory": "64M", "cpus": "0.5", "pids": 32, "net": "veth"}, 8)
+                                  "memory": "64M", "cpus": "0.5", "pids": 32, "net": "veth",
+                                  "init": True}, 8)
         self.assertEqual(opts, {"argv": ["sleep", "300"], "name": "web", "hostname": "box",
-                                "memory": "64M", "cpus": "0.5", "pids": "32", "net": "veth"})
+                                "memory": "64M", "cpus": "0.5", "pids": "32", "net": "veth",
+                                "init": True})
 
     def test_minimal_payload(self):
         opts = v.validate_launch({"command": "ls"}, 8)
         self.assertEqual(opts["argv"], ["ls"])
         self.assertEqual(opts["net"], "none")
         self.assertEqual(opts["name"], "")
+        self.assertIs(opts["init"], False)
+
+    def test_init_is_passed_through_as_a_boolean(self):
+        self.assertIs(v.validate_launch({"command": "ls", "init": True}, 8)["init"], True)
+        self.assertIs(v.validate_launch({"command": "ls", "init": False}, 8)["init"], False)
+
+    def test_bad_init_is_reported_on_the_init_field(self):
+        with self.assertRaises(v.ValidationError) as ctx:
+            v.validate_launch({"command": "ls", "init": "true"}, 8)
+        self.assertEqual(ctx.exception.field, "init")
 
     def test_requires_command(self):
         with self.assertRaises(v.ValidationError):

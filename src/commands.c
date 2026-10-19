@@ -10,6 +10,9 @@
  * ancestor namespace (the host) if init installed a handler for it; SIGKILL
  * and SIGSTOP are the exceptions and always work. `sleep` or `sh` as init have
  * no SIGTERM handler, so SIGTERM is silently dropped and only SIGKILL stops them.
+ * With `run --init` PID 1 is minibox's own tiny init (minit.c): it keeps SIGTERM
+ * pending and forwards it to the command, so a normal program stops at once
+ * (exit code 143) and the SIGKILL escalation is only a fallback.
  */
 #define _GNU_SOURCE
 #include "commands.h"
@@ -61,7 +64,7 @@ static void usage_run(void)
     fprintf(stderr,
             "Usage: minibox run [-d] [--name NAME] [--rootfs DIR] [--hostname NAME]\n"
             "                   [--net none|veth] [--memory N[K|M|G]] [--cpus X]\n"
-            "                   [--pids N] [--stats] -- COMMAND [ARGS...]\n"
+            "                   [--pids N] [--stats] [--init] -- COMMAND [ARGS...]\n"
             "  -d               run in the background and print only the container ID\n"
             "  --name NAME      give the container a unique name (usable instead of the ID)\n"
             "  --rootfs DIR     root filesystem directory (default: %s)\n"
@@ -73,6 +76,8 @@ static void usage_run(void)
             "  --cpus X         CPU limit in cores, e.g. 0.5 or 2 (cgroup cpu.max)\n"
             "  --pids N         maximum number of processes (cgroup pids.max)\n"
             "  --stats          print cgroup usage (memory, cpu, pids) after exit\n"
+            "  --init           PID 1 is a tiny init that forwards signals to the command and\n"
+            "                   reaps orphaned zombies (needs --pids >= 2 if --pids is used)\n"
             "Without --memory/--cpus/--pids no cgroup is created.\n"
             "Must be run as root (sudo).\n",
             DEFAULT_ROOTFS, DEFAULT_HOSTNAME);
@@ -198,6 +203,7 @@ static void print_table_row(const struct container_state *st, long long now)
 {
     const char *status = state_effective_status(st);
     char name[COL_NAME_MAX + 4], cmd[COL_CMD_MAX + 4], age[32], limits[96], pid[24];
+    const char *init = st->init ? "yes" : "-";
 
     ellipsize(name, sizeof(name), st->name[0] ? st->name : "-", COL_NAME_MAX);
     ellipsize(cmd, sizeof(cmd), st->command, COL_CMD_MAX);
@@ -207,8 +213,8 @@ static void print_table_row(const struct container_state *st, long long now)
         snprintf(pid, sizeof(pid), "%ld", st->pid);
     else
         snprintf(pid, sizeof(pid), "-");
-    printf("%-12s %-*s %-8s %-8s %-*s %-10s %s\n", st->id, COL_NAME_MAX, name, status, pid,
-           COL_CMD_MAX, cmd, age, limits);
+    printf("%-12s %-*s %-8s %-8s %-4s %-*s %-10s %s\n", st->id, COL_NAME_MAX, name, status, pid,
+           init, COL_CMD_MAX, cmd, age, limits);
 }
 
 static void print_table(const struct container_state *all, size_t n, int show_all)
@@ -216,8 +222,8 @@ static void print_table(const struct container_state *all, size_t n, int show_al
     long long now = (long long)time(NULL);
     size_t i;
 
-    printf("%-12s %-*s %-8s %-8s %-*s %-10s %s\n", "ID", COL_NAME_MAX, "NAME", "STATUS", "PID",
-           COL_CMD_MAX, "COMMAND", "CREATED", "LIMITS");
+    printf("%-12s %-*s %-8s %-8s %-4s %-*s %-10s %s\n", "ID", COL_NAME_MAX, "NAME", "STATUS",
+           "PID", "INIT", COL_CMD_MAX, "COMMAND", "CREATED", "LIMITS");
     for (i = 0; i < n; i++)
         if (ps_visible(&all[i], show_all))
             print_table_row(&all[i], now);
@@ -267,7 +273,8 @@ static void print_json_object(FILE *f, const struct container_state *st)
     json_str_field(f, "rootfs", st->rootfs, ",");
     json_str_field(f, "hostname", st->hostname, ",");
     json_str_field(f, "net", st->net, ",");
-    fprintf(f, "\"memory\":%lld,\"cpus\":%g,\"pids\":%ld,", st->memory, st->cpus, st->pids);
+    fprintf(f, "\"memory\":%lld,\"cpus\":%g,\"pids\":%ld,\"init\":%s,", st->memory, st->cpus,
+            st->pids, st->init ? "true" : "false");
     json_str_field(f, "ip", st->ip, "}");
 }
 
@@ -394,7 +401,8 @@ static void usage_stop(void)
             "Usage: minibox stop [--time N] <id|name>\n"
             "  --time N   seconds to wait after SIGTERM before sending SIGKILL (default %d)\n"
             "Note: a PID 1 without a SIGTERM handler (e.g. plain 'sleep' or 'sh') ignores\n"
-            "SIGTERM, so stop usually ends up using SIGKILL.\n",
+            "SIGTERM, so stop usually ends up using SIGKILL. A container started with\n"
+            "'run --init' forwards SIGTERM to its command and stops at once (exit code 143).\n",
             STOP_DEFAULT_SECONDS);
 }
 

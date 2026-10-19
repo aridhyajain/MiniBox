@@ -119,6 +119,8 @@ def run_detached(opts):
     for flag in ("name", "hostname", "memory", "cpus", "pids"):
         if opts.get(flag):
             args += ["--" + flag, opts[flag]]
+    if opts.get("init") is True:         # a bare flag; only a real True turns it on
+        args.append("--init")
     args += ["--"] + opts["argv"]
     with _launch_lock:
         running = sum(1 for c in list_containers() if c.get("status") == "running")

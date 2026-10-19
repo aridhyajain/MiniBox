@@ -23,7 +23,7 @@ Constants: `MAX_RUNNING=10` containers, `CMD_TIMEOUT=15` s, `STOP_GRACE=3` s, `E
 | `_raise_for(stderr)` | bytes | never returns | `NotFoundError` ("no such container"), `ConflictError` ("already used", "not running", "is running"), else `MiniboxError` |
 | `_run(args, timeout)` | argument list | `CompletedProcess` | `MiniboxError` on timeout or OS error; runs the binary |
 | `list_containers()` | – | list of dicts from `ps -a --json` | `MiniboxError` if the command fails or prints invalid JSON |
-| `run_detached(opts)` | validated options from `validation.validate_launch` | the new 12-hex ID | `LimitError` if 10 containers already run; `ConflictError` for a used name; `MiniboxError` otherwise. A lock makes "count running, then start" atomic. Starts a container |
+| `run_detached(opts)` | validated options from `validation.validate_launch` | the new 12-hex ID | `LimitError` if 10 containers already run; `ConflictError` for a used name; `MiniboxError` otherwise. A lock makes "count running, then start" atomic. Starts a container; when `opts["init"] is True` the bare flag `--init` is added (a flag, never a value from the browser) |
 | `get_logs(id, tail)` | ID, line count | `{logs, lines, truncated}` | reads at most 4 MB of `minibox logs` output (`Popen`, killed after 15 s); `NotFoundError`, `MiniboxError`. `minibox logs` has no `--tail`, so the last lines are cut here |
 | `stop(id)` | ID | the binary's message | `stop --time 3`: SIGTERM, 3 s, then SIGKILL. `NotFoundError`, `MiniboxError` |
 | `remove(id)` | ID | – | `stop --time 0` (so a PID 1 that ignores SIGTERM is killed at once), then `rm -f`. `NotFoundError`, `MiniboxError` |

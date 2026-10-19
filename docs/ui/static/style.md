@@ -9,7 +9,7 @@ None (CSS). Structure:
 - **Colour variables** on `:root` (light); `@media (prefers-color-scheme: dark)` overrides them, so the theme follows the system setting.
 - **Layout**: centred `main` with `.card` sections; the launch form is a 3-column grid (2 columns under 720 px, 1 under 460 px); the table sits in
   `.table-wrap` with horizontal scroll on narrow screens.
-- **Components**: `.badge.running|exited|dead`, `.banner` (errors), `.output` (dark log/exec box, wraps long lines, scrolls),
+- **Components**: `label.check` (the Init checkbox row: label text next to the box), `.badge.running|exited|dead`, `.banner` (errors), `.output` (dark log/exec box, wraps long lines, scrolls),
   `button` states (`:disabled` is greyed and shows `not-allowed`), `:focus-visible` outlines for keyboard use.
 - No inline styles anywhere (the Content-Security-Policy does not allow them).
 

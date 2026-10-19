@@ -7,7 +7,7 @@ Helpers shared by `tests/phase4b_test.sh` and `tests/phase5_test.sh` (both `sour
 **Why live processes, not `pids.current`.** When a command started by `minibox exec` is killed, its children become orphans and the kernel
 reparents them to the container's PID 1. In minibox PID 1 is the user's command (e.g. `sleep 300`) and never calls `wait()`, so a dead orphan stays
 a *zombie*: not running, but still in the process table. `pids.current` counts zombies, `cgroup.procs` lists only live processes. The tests ask
-"is anything still running?", so they count the lines of `cgroup.procs`.
+"is anything still running?", so they count the lines of `cgroup.procs`. (In a container started with `run --init`, PID 1 is `minibox-init`, which reaps orphans, so `zombie_count` is 0 there; `tests/init_test.sh` relies on that.)
 
 ## Functions
 | Function | Inputs | Returns | Errors / side effects |

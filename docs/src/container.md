@@ -17,6 +17,7 @@ clone() --------------------------------->  sethostname, bring lo up, rootfs_set
     write pid to cgroup.procs
   (--net veth) net_veth_setup(pid, n)
   write 'G' (or 'A' + SIGKILL on failure) ->  'G': (veth) eth0 10.0.<n>.2/24, chdir, execvp
+                                                (--init: minit_run instead of execvp)
 on_started(pid) hook (monitor records pid)   'A' or EOF: exit 1
 waitpid
 net_veth_cleanup(pid)  (veth mode)
@@ -52,7 +53,7 @@ A signal arriving before `target_pid` is set is caught by the `stop_signal` chec
 | `child_handshake(p)` | pipes | 0 / -1 | writes `'R'`, blocks for `'G'`; "aborted by parent" on `'A'`/EOF |
 | `set_container_address(index)` | subnet index | 0 / -1 | `net_subnet_addrs` → `net_set_ipv4(eth0, 10.0.<index>.2, 24)` |
 | `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `set_container_address` → `chdir("/")` → PATH/HOME (`DEFAULT_PATH`, now defined in `container.h` and shared with `exec`) |
-| `child_main(arg)` | args | exit code | 1 on setup failure, 127 if `execvp` fails |
+| `child_main(arg)` | args | exit code | 1 on setup failure; with `cfg->init` it returns `minit_run(argv)` (the tiny init, `src/minit.c`, stays PID 1 and runs the command as its child); otherwise 127 if `execvp` fails |
 | `parent_wait_ready(fd)` | fd | 0 / -1 | -1 on EOF (child died) or on a stop signal |
 | `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth only: `net_veth_setup(pid, cfg->net_index)` |
 | `parent_setup(cfg, pid, p, cg, &child_died)` | – | 0 / -1 | wait `'R'` → `cgroup_setup(cg, cfg->id, ...)` (leaf `box-<id>`, if limits; prints "cgroup setup failed; container stopped") → network → fails if a stop signal arrived |
@@ -69,6 +70,11 @@ A signal arriving before `target_pid` is set is caught by the `stop_signal` chec
 `on_started` hook. The hook runs in the supervising process right after the child was released, with the init PID as
 seen from the host. The monitor (`src/monitor.c`) uses it to record `pid`/`started_at` and to tell `run -d` that the
 container is up. Everything else is unchanged; the id and the subnet are chosen by `state_create` before `container_run`.
+
+## Phase 7 addition: `--init`
+`container_config` gained `init`. When it is set, `child_main` does not `execvp` the command but calls `minit_run()` (`src/minit.c`): the cloned child stays
+PID 1 as a tiny init, forks the command, forwards signals and reaps every child, and returns the command's exit status (128+N if signalled). The parent side is
+unchanged: it waits for PID 1 and sees that status (so `stop` of a normal program gives 143 instead of 137). Without `--init` the code path is the same as before.
 
 ## System calls used and why
 - `mmap`/`munmap` – child stack for `clone`.

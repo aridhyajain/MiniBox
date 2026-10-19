@@ -39,6 +39,7 @@ struct container_state {
     long long memory;               /* bytes */
     double cpus;                    /* cores */
     long pids;
+    int init;                       /* 1 = started with --init (PID 1 is minibox-init) */
     char ip[NET_ADDR_LEN];          /* container address, veth only */
 };
 

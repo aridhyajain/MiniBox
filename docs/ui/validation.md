@@ -24,7 +24,8 @@ Empty or missing optional fields mean "not given" and return `""` (or the defaul
 | `validate_command(value, field)` | command line string | list of arguments | `shlex.split`; rejects control chars, unbalanced quotes, empty command or empty first argument, more than 32 arguments, any argument over 256 characters |
 | `validate_container_id(value)` | URL path part | the ID | exactly 12 lowercase hex characters (blocks `../`, `-rf`, `$(id)` in paths) |
 | `validate_tail(value)` | query string value or `None` | int 1 to 1000 (default 200) | digits only |
-| `validate_launch(payload, max_cpus=None)` | decoded JSON body | dict `argv, name, hostname, memory, cpus, pids, net` | body must be an object; unknown fields (e.g. `rootfs`) are rejected; `command` is required |
+| `validate_init(value)` | decoded JSON value | the same `bool` | **strict**: only `true` / `false` pass; strings (`"true"`), numbers (`1`), `null`, lists and dicts raise `ValidationError("init", "must be true or false")` |
+| `validate_launch(payload, max_cpus=None)` | decoded JSON body | dict `argv, name, hostname, memory, cpus, pids, net, init` (`init` is `False` when absent) | body must be an object; unknown fields (e.g. `rootfs`) are rejected; `command` is required |
 | `validate_exec(payload)` | decoded JSON body | argv list | object with only `command` |
 
 Internal helpers: `_text(field, value)` (str without control characters), `_whole_number(field, value, low, high)`.

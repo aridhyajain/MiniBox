@@ -344,7 +344,7 @@ That is why, after a killed `exec`, `pids.current` can be 2 while `cgroup.procs`
 count the lines of `cgroup.procs` (see `tests/lib.sh`) to ask "is anything still running?".
 
 **How Docker solves it.** `docker run --init` starts a tiny init program (`tini`) as PID 1 and runs the user's command as its child. `tini` forwards
-signals and calls `wait()` in a loop, so orphans are reaped. minibox does not have this yet; an optional `--init` flag is listed as future work.
+signals and calls `wait()` in a loop, so orphans are reaped. minibox has the same thing as an opt-in: `minibox run --init` (see "Phase 7 – the `--init` option" below).
 
 ## Phase 6 – benchmarks and limit enforcement
 
@@ -371,7 +371,7 @@ Docker has a daemon, a different filesystem (overlayfs), more namespaces and sec
 ### Why did a benchmark workload hang the container? (the PID 1 lesson)
 The CPU test ran `sh -c "timeout 2 sh -c '...busy loop...'"`. busybox `sh -c` **execs the last command** instead of forking it, so `timeout` replaced the shell and became PID 1 of the container. `timeout` kills its child after 2 seconds and then ends itself by sending itself a signal. That is the problem: **the PID-namespace init is special**. The kernel drops signals sent to it from inside its own namespace unless the program installed a handler for them (only signals from the parent namespace, such as SIGKILL from the host, always work). `timeout` has no handler, so it could not kill itself and the container never ended. A normal process has no such protection: the same signal would just kill it. Appending `; exit 0` keeps the shell as PID 1 (it forks `timeout`, waits for it, and exits normally).
 
-How it relates to other things: the same "PID 1 is special" rule is why `sleep 300` as PID 1 ignores SIGTERM (so `stop` waits for its grace period before SIGKILL, and the benchmark cleanup writes to `cgroup.kill` instead), and why orphaned zombies pile up under minibox's PID 1 (PID 1 inherits orphans and is expected to `wait()` for them). Docker's `--init` runs a tiny init (`tini`) as PID 1 that has signal handlers and reaps children, which avoids all three problems. minibox does not have `--init` yet.
+How it relates to other things: the same "PID 1 is special" rule is why `sleep 300` as PID 1 ignores SIGTERM (so `stop` waits for its grace period before SIGKILL, and the benchmark cleanup writes to `cgroup.kill` instead), and why orphaned zombies pile up under minibox's PID 1 (PID 1 inherits orphans and is expected to `wait()` for them). Docker's `--init` runs a tiny init (`tini`) as PID 1 that has signal handlers and reaps children, which avoids all three problems. minibox now has the same opt-in: `minibox run --init` (see "Phase 7 – the `--init` option").
 
 **The fix was in the benchmark, not the runtime**: minibox behaves exactly like a real container runtime here. The benchmark now keeps a shell as PID 1, gives every call a timeout, and records `ERROR`/`TIMEOUT` rows instead of aborting.
 
@@ -404,3 +404,34 @@ The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `ben
 **Why is startup with veth slower?** The likely reason is that the setup runs several `ip` commands as separate processes and moves interfaces between network namespaces. This is the likely reason, not something we measured.
 
 **Why is `minibox_limits` slow at the median when its minimum is the same?** Observed and unexplained: most runs have an extra delay of roughly 30 ms. We did not investigate, so we do not claim a cause; hypotheses are cgroup creation or removal cost and waiting on teardown.
+
+## Phase 7 – the `--init` option (a tiny PID 1)
+
+### What is special about PID 1?
+Every PID namespace has a first process, PID 1, and the kernel treats it differently from all others:
+1. **It adopts orphans.** When a process dies, its children need a new parent; inside the container that is PID 1. A dead child stays a *zombie* until its parent calls `wait()`. A PID 1 that never waits (like `sleep 300`) collects zombies.
+2. **It is protected from signals.** A signal sent to PID 1 from *outside* its namespace (the host) is dropped unless PID 1 has installed a handler for it (`SIGKILL` and `SIGSTOP` always work). Signals from inside are dropped the same way. So a plain `sleep` or `sh` as PID 1 ignores SIGTERM, and a program that becomes PID 1 (busybox `timeout`) cannot kill itself.
+3. **If it exits, the whole namespace is killed.**
+
+### What does `--init` do, step by step?
+Without `--init` the command replaces our setup process and *is* PID 1. With `--init` the setup process stays PID 1 and becomes a tiny init (`src/minit.c`):
+1. It renames itself `minibox-init` (`prctl(PR_SET_NAME)`) so `/proc/1/comm` and `ps` show what it is.
+2. It **blocks** SIGCHLD, SIGTERM, SIGINT, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2. A blocked signal is not dropped; it waits as *pending*. That is how a handler-less PID 1 can still receive SIGTERM from the host.
+3. It `fork`s. The child puts the signal mask and handlers back to normal and `exec`s the real command (PID 2). If the program does not exist: exit 127; if it cannot be run: 126; if `fork` fails: message and 127.
+4. It loops: first **reap**, then **wait for a signal** (`sigtimedwait`). A SIGCHLD only wakes it up; any other signal is **forwarded** to the command with `kill()`.
+5. When the command has been reaped, the init exits with its status: the exit code, or 128+signal if it was killed (143 for SIGTERM, 137 for SIGKILL). `minibox run` returns that code and `stop` records it.
+
+### Why `waitpid(-1)` in a loop?
+`waitpid(pid)` waits for one particular child. Orphans are children of the init that it never forked itself, so it does not know their PIDs: `waitpid(-1, ..., WNOHANG)` means "any child that has exited, but do not block". It is called repeatedly until it returns 0 (children exist but none has exited) or fails with `ECHILD` (no children), because SIGCHLD is not queued: three children dying together may produce only one signal, and a single `waitpid` would leave two zombies. The loop also reaps first and waits second, and `sigtimedwait` has a 1 s timeout, so even a lost SIGCHLD cannot leave a zombie for long.
+
+### Why forward signals?
+With `--init` the command is no longer PID 1, so a signal that `minibox stop` sends to "the container's PID" goes to the init, not to the program. The init passes it on, the program (a normal process, with default signal handling) simply dies of SIGTERM, and `stop` returns quickly with exit code 143 = 128+15 instead of waiting out the 5 s grace period and then using SIGKILL (137). Signals the terminal generates (Ctrl+C) are not forwarded, because the command is in the same foreground process group and already receives them directly; forwarding would deliver them twice.
+
+### How does it relate to Docker's `--init` and `tini`?
+It is the same idea: `docker run --init` puts a small program called `tini` (it is also what Kubernetes people mean by "an init in the container") in front of the command. `tini` forwards signals and reaps children. minibox's `minit.c` is a few dozen lines doing the same two jobs. It is much simpler than a full init system (systemd): it starts nothing but the one command and supervises nothing.
+
+### What is the trade-off?
+One more process per container (a few hundred KB of memory, one entry against `--pids`, so `--pids` must be at least 2), and one more step between `stop` and the program. That is why it is **opt-in**: the default stays "the command is PID 1" (the Phase 1 test relies on it), and you add `--init` for containers that start child processes, are killed by `exec` timeouts, or must stop quickly. The web UI has a checkbox for it. Interactive `run --init -- sh` is designed to keep working because the init does not touch the terminal's process groups (this path is reasoned about, not covered by the automated tests, which have no tty).
+
+### How is it tested?
+`sudo bash tests/init_test.sh`: PID 1 is `minibox-init` and the command is PID 2 (control: without `--init` the command is PID 1); an orphan is reaped (0 zombies; control without `--init` shows 1); exit codes 7, 143, 137, 127, 126 are propagated; `stop` takes under 2 s and gives 143 (control: grace period then 137); the earlier benchmark hang (`timeout` as PID 1) cannot happen; limits, `--net veth` and `exec` work; nothing is left behind.

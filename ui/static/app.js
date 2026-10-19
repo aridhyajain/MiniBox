@@ -135,6 +135,7 @@
       var status = el("td");
       status.appendChild(el("span", "badge " + (/^[a-z]+$/.test(c.status) ? c.status : ""), c.status));
       tr.appendChild(status);
+      tr.appendChild(el("td", "mono", c.init === true ? "yes" : "-"));
       var cmd = el("td", "cmd mono", c.command || "");
       cmd.title = c.command || "";
       tr.appendChild(cmd);
@@ -190,11 +191,13 @@
       var value = $("f-" + key).value.trim();
       if (value !== "") { body[key] = value; }
     });
+    if ($("f-init").checked) { body.init = true; }   // a real boolean, only when ticked
     busy($("launch-btn"), function () {
       return api("POST", "/api/containers", body).then(function () {
         clearError();
         $("f-command").value = "";
         $("f-name").value = "";
+        $("f-init").checked = false;
       });
     }).then(refresh, function (e) { showError(e.message); });
   }

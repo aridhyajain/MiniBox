@@ -11,7 +11,8 @@ Linux kernel primitives, without Docker.
 - **Phase 4a (implemented):** container management: `run -d`, `ps`, `logs`, `stop`, `rm`; state on disk; a monitor process per container; one subnet per veth container.
 - **Phase 4b (implemented):** `exec` (`setns` into a running container, joining its cgroup), `tests/run_all.sh`.
 - **Phase 5 (implemented):** local web UI (Flask) that launches and manages containers by calling the CLI; token, Host check and loopback-only binding.
-- Later: Flask UI, benchmarks.
+- **Phase 6 (implemented):** benchmarks, charts, limit-enforcement checks.
+- **`--init` (implemented):** opt-in tiny PID 1 (`src/minit.c`) that forwards signals and reaps orphans.
 
 ## Modules
 ```
@@ -26,6 +27,7 @@ src/container.c   mmap stack, pipes, clone(NEWPID|NEWUTS|NEWNS|NEWIPC|NEWNET), w
     |  (in child)  rootfs_setup(rootfs), net_loopback_up(), net_set_ipv4()
     |  (in parent) cgroup_setup(id, pid), net_veth_setup(pid, n), cleanup of both
     v
+src/minit.c       `--init` only: runs as PID 1 inside the container, forks the command, forwards signals, reaps all children
 src/rootfs.c      private mounts, bind, /dev, pivot_root, /proc, /tmp
 src/net.c         loopback + address via ioctl (child); veth via `ip` (parent); subnet addresses
 src/cgroup.c      cgroup v2 check, leaf create, limits, stats, rmdir, join (file I/O only)
@@ -40,11 +42,11 @@ containers/
 ├── .lock                 flock() while a container is being registered (name, ID, subnet are chosen atomically)
 └── <id>/                 12 lowercase hex characters from getrandom(); created with mkdir (atomic claim)
     ├── state             key=value: id name status pid monitor_pid exit_code created_at started_at finished_at
-    │                     command rootfs hostname net memory cpus pids ip   (written via temp file + rename)
+    │                     command rootfs hostname net memory cpus pids init ip   (written via temp file + rename)
     └── log               stdout+stderr of a detached container (O_APPEND)
 ```
 `status` is `running` or `exited`; `dead` is never stored: it is shown when the status is `running` but
-`kill(monitor_pid, 0)` fails. `pid` is the container's init as seen from the host.
+`kill(monitor_pid, 0)` fails. `pid` is the container's init as seen from the host (with `--init`: `minibox-init`).
 Separate commands (`ps`, `stop`, ...) find containers only through these files and through signals.
 
 ## The monitor process (Phase 4a)
@@ -67,14 +69,27 @@ Child (inside the new namespaces; PID 1):
 2. bring up `lo` (ioctl) – network ns
 3. `rootfs_setup`: private mounts, bind rootfs, `/dev`, `pivot_root`, `/proc`, `/tmp`
 4. write `'R'` to the *ready* pipe, then **block** reading the *go* pipe
-5. on `'G'`: (veth) set `eth0` to 10.0.n.2/24 and up; `chdir("/")`, set `PATH`/`HOME`, `execvp(command)`.
-   On `'A'` or EOF: exit 1.
+5. on `'G'`: (veth) set `eth0` to 10.0.n.2/24 and up; `chdir("/")`, set `PATH`/`HOME`, `execvp(command)`
+   (with `--init`: `minit_run(command)` instead, see below). On `'A'` or EOF: exit 1.
 
 Parent: (limits) check cgroup v2 before cloning; install SIGINT/SIGTERM handlers; `clone`; wait for `'R'`;
 (limits) create `box-<id>`, write limits, write the PID to `cgroup.procs`; (veth) create the pair, move the peer into the
 child's netns, configure the host end; write `'G'` (or `'A'` + SIGKILL if anything failed); call `on_started(pid)`; `waitpid`; delete the host veth
 if it still exists; (limits) `--stats`, OOM check (exit 137), `rmdir` the leaf; restore handlers;
 return the child's exit code (128+N for signal N). SIGINT/SIGTERM at any point kill the container and the same cleanup runs.
+
+## `--init`: a tiny PID 1 (opt-in)
+```
+without --init                         with --init
+PID 1: the command                     PID 1: minibox-init  (src/minit.c)
+                                         |-- PID 2: the command
+                                         '-- orphans of any depth are reparented here and reaped
+```
+`child_main` calls `minit_run(argv)` instead of `execvp`. The init blocks SIGCHLD/SIGTERM/SIGINT/SIGHUP/SIGQUIT/SIGUSR1/SIGUSR2, forks the command (which restores the
+mask and default handlers and execs; exit 127/126 if it cannot), then loops: reap everything with `waitpid(-1, WNOHANG)`, wait for a signal with `sigtimedwait`, forward it
+to the command (except tty-generated ones, which the command already got from the terminal). When the command is gone, the init exits with its code (128+N if signalled);
+the monitor and `stop` see that code, so `stop` gives 143. The state file stores `init=1`, `ps` shows it, and `exec` works unchanged because the init is still the
+PID-namespace init (`NSpid` ends in 1). Details: `docs/src/minit.md`.
 
 ## exec: entering a running container (Phase 4b)
 `minibox exec <id|name> -- cmd...` does not create anything; it moves a new process into what `run` built:
