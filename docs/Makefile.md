@@ -33,6 +33,8 @@ Single entry point for building, setup and test instructions.
 | `ui-setup` | prints `scripts/setup_ui.sh` (creates `ui/venv`, no sudo) | prints only |
 | `ui-run` | builds, then prints `sudo scripts/run_ui.sh 8080` | prints only; never runs sudo itself |
 | `demo` | builds, then prints the commands to run the Review 1 demo | never runs sudo itself |
+| `deliverables-check` | `python3 scripts/build_deliverables.py check-tools` | no root; prints which converters exist and the exact install commands if one is missing |
+| `deliverables-docs` | `python3 scripts/build_deliverables.py docs` | no root; writes only to `~/minibox-deliverables/` (outside the repo) |
 | `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
 All non-file targets are `.PHONY`.
@@ -59,5 +61,7 @@ make probe-attach # prints: sudo bench/probe_attach_stall.sh bench/results/analy
 make ui-setup    # prints scripts/setup_ui.sh
 make ui-run      # prints sudo scripts/run_ui.sh 8080
 make test-all   # prints: sudo bash tests/run_all.sh
+make deliverables-check   # tool report and routes
+make deliverables-docs    # builds ~/minibox-deliverables/MiniBox_Documentation.docx
 make clean
 ```

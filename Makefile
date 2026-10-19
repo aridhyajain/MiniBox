@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c src/minit.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick probe-attach charts ui-setup ui-run demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick probe-attach charts deliverables-check deliverables-docs ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -107,6 +107,13 @@ probe-attach: $(TARGET)
 
 charts:
 	python3 bench/make_charts.py bench/results/latest
+
+# Final deliverables are built OUTSIDE the repo, in ~/minibox-deliverables/ (no root; the script refuses to write inside the repo).
+deliverables-check:
+	python3 scripts/build_deliverables.py check-tools
+
+deliverables-docs:
+	python3 scripts/build_deliverables.py docs
 
 clean:
 	rm -rf $(BUILD) $(TARGET)

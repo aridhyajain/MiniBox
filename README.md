@@ -207,6 +207,15 @@ Limit enforcement (expected versus measured):
 
 Startup chart, memory chart and limits chart above are from the after run (`bench/results/reference/`). Regenerate the tables with `python3 bench/make_report_tables.py bench/results/reference`.
 
+## Deliverables
+The final Word documentation is built outside the repository, into `~/minibox-deliverables/` (no root; the script refuses to write inside the repo):
+```sh
+make deliverables-check   # which tools exist, which route is chosen, exact install commands for what is missing
+python3 scripts/build_deliverables.py coverage   # every docs/**/*.md: included, excluded or missing
+make deliverables-docs    # builds ~/minibox-deliverables/MiniBox_Documentation.docx and verifies it
+```
+Fill in the student details in `~/minibox-deliverables/config.json` (created on first run; empty values show as `[PLACEHOLDERS]` on the title page). `docs/VIVA_NOTES.md`, `docs/DEVLOG.md` and the docs of this tooling are never included. Details: `docs/scripts/build_deliverables.md`.
+
 ## Documentation
 
 See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md`, `docs/DEVLOG.md`, `docs/BENCHMARKS.md`, and the review guides `docs/REVIEW1.md` and `docs/REVIEW2.md`. Every source file has a matching doc under `docs/`.
