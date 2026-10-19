@@ -1,0 +1,26 @@
+# Alpine root filesystem and download cache
+rootfs/*
+!rootfs/.gitkeep
+.cache/
+
+# Build outputs
+build/
+bin/
+*.o
+*.a
+*.so
+*.d
+minibox
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Editor / OS
+.vscode/
+*.swp
+.DS_Store
