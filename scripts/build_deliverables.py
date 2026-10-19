@@ -1386,7 +1386,7 @@ BENCH_BEFORE, BENCH_AFTER = "reference-before-clone3", "reference"    # result f
 PROBE_FILE = "analysis/attach_stall_probe.txt"
 # Left out of the repository tree in Appendix B (build outputs, caches, third-party code, empty markers).
 TREE_SKIP_DIRS = {"venv", "__pycache__", "results", ".cache", "build", "rootfs"}
-TREE_SKIP_FILES = {".gitkeep", ".gitignore", "minibox", "LICENSE"}
+TREE_SKIP_FILES = {".gitkeep", ".gitignore", "minibox", "LICENSE", "CLAUDE.md"}
 TREE_GROUPS = (".", "include", "src", "scripts", "tests", "ui", "bench", "docs")
 ABSTRACT_WORDS = (150, 250)
 REPORT_FONTS = ("Liberation Serif", "DejaVu Sans Mono", "Liberation Sans")

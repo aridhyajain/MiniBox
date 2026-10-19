@@ -246,3 +246,8 @@
 - `scripts/build_deliverables.py` finds README sections by heading prefix, so it and its tests needed no change; no docs link to README anchors.
 - `src/` and `include/` untouched; no git, no sudo.
 - `scripts/build_deliverables.py`: `LICENSE` added to `TREE_SKIP_FILES`. Without it `tree_omitted()` listed `LICENSE` (no purpose, no doc) and `test_real_repository_tables_are_complete` failed. Docs updated: `docs/scripts/build_deliverables.md`, `docs/tests/test_build_deliverables.md`.
+
+## 2026-10-19 – Appendix B skips CLAUDE.md
+- `scripts/build_deliverables.py`: `CLAUDE.md` added to `TREE_SKIP_FILES` (it is git-ignored and local only, so Appendix B must never list it).
+- `tests/test_build_deliverables.py`: the fake repo of `make_gen_repo` now has a `CLAUDE.md`; `test_tree_skips_caches_markers_and_undocumented_files` asserts it is absent from `tree_files`, `tree_omitted` and `tree_table`.
+- Docs: `docs/scripts/build_deliverables.md`, `docs/tests/test_build_deliverables.md`. `src/` and `include/` untouched; no git, no sudo; make targets not run.

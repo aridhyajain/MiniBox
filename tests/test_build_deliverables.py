@@ -693,6 +693,7 @@ def make_gen_repo(root):
         "src/a.c": "int main(void);\n", "docs/src/a.md": "# src/a.c\n\n## Purpose\nDoes A. More text.\n",
         "src/b.c": "int b;\n",                                  # no document: left out of the table
         "README.md": "# Title\n\nThe readme says this. And more.\n",
+        "CLAUDE.md": "# Rules\n\nLocal only, never listed.\n",   # skipped: not tracked
         "docs/NOTES.md": "# Some notes\n\nBody.\n",
         "src/.gitkeep": "", "src/__pycache__/x.pyc": "", "bench/results/reference/startup.svg": "<svg/>"})
 
@@ -753,6 +754,9 @@ class TreeTests(unittest.TestCase):
             self.assertNotIn("src/b.c", table)
             self.assertEqual(bd.tree_omitted(d), ["src/b.c", "bench/make_charts.py", "bench/make_report_tables.py"])
             self.assertEqual(bd.tree_files("bench", d), ["bench/make_charts.py", "bench/make_report_tables.py"])  # no results/
+            self.assertNotIn("CLAUDE.md", bd.tree_files(".", d))
+            self.assertNotIn("CLAUDE.md", bd.tree_omitted(d))
+            self.assertNotIn("CLAUDE.md", bd.tree_table(".", d))
             with self.assertRaises(bd.BuildError):
                 bd.tree_files("nowhere", d)
 
