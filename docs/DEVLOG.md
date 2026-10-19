@@ -235,3 +235,7 @@
 - **`ui/static/app.js`**: only `renderTable()` changed (8 cells: id, name/command, state, memory, cpu, pids, started, actions; `textContent`/DOM only) and the unused `formatLimits` was removed; button labels lower-cased. All element ids, API calls, token handling, polling and the confirm dialog are unchanged.
 - **Checked** with Windows headless Chrome on a copy of the page with a stubbed `fetch` (nothing added to the repo): zero containers and three (running, exited 0, exited 137) at 1100 px and in a 380 px frame, plus detail panel and error banner; fixed a wrapping id column and table overflow found that way. Not tested against a live server (needs sudo).
 - Docs: `docs/ui/static/style.md`, `docs/ui/static/app.md`, `docs/ui/templates/index.md`. `src/`, `include/`, `ui/app.py`, `ui/validation.py`, `ui/minibox_client.py` untouched; no git, no sudo.
+
+## 2026-10-19 – UI CSS: network select width, lighter placeholders
+- `ui/static/style.css` only. The network `<select>` was cut off ("none (own empty namespac"): its label now spans two grid columns (`label:has(> #f-net)`), reset to one column under 420 px so it shrinks with the grid. Placeholders (command, memory, cpus, pids, exec) use a new `--placeholder` (#757168, 4.8:1 on the field background; typed text 17:1) instead of `--muted`.
+- Docs: `docs/ui/static/style.md`. Template, Python, `src/` and `include/` untouched; no git, no sudo.

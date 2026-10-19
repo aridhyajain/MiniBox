@@ -9,10 +9,10 @@ one blue accent), square corners (2px at most), 1px borders, no shadows, gradien
 ## Functions
 None (CSS). Structure:
 - **Palette** as variables on `:root` (`--bg`, `--panel`, `--head`, `--text`, `--muted`, `--border`, `--rule`, `--accent`, `--selected`, `--danger`,
-  `--err-bg`, three state-square colours, two font stacks). The accent is used only for the primary button, links, focus rings and the selected-row marker.
+  `--err-bg`, `--placeholder` (#757168: placeholder text, 4.8:1 on the field background `--panel`, clearly lighter than typed text `--text`, 17:1), three state-square colours, two font stacks). The accent is used only for the primary button, links, focus rings and the selected-row marker.
   There is no dark theme.
 - **Run form**: `#launch-form` is a grid (`repeat(auto-fill, minmax(11rem, 1fr))`, 2 columns under 640 px, 1 under 420 px); `label` puts a small caption above its
-  field; `.wide` spans the row; `label.check` is a flex row so the Init checkbox and its text sit on one line, flush with the grid's left edge; `.actions` is the button row.
+  field; `.wide` spans the row; the label holding the network select (`label:has(> #f-net)`) spans 2 columns so "none (own empty namespace)" is not cut off (reset to 1 column under 420 px, where the select shrinks with the grid); `label.check` is a flex row so the Init checkbox and its text sit on one line, flush with the grid's left edge; `.actions` is the button row.
 - **Containers table**: `.table-wrap` is the scroll box (both directions, `max-height` 28rem), so the page itself never scrolls sideways; the header is
   `position: sticky`; `.num` columns (memory, cpu, pids) are right-aligned with tabular digits; `.state` draws an 8x8 square (`.state-running|exited|dead|failed|other`)
   before plain text; `.name` / `.cmd` are the two lines of the "name / command" cell (command truncated with an ellipsis, full text in the `title`);

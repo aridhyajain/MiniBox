@@ -11,7 +11,8 @@
   --muted: #5e5b53;       /* captions, hints (6:1 on --bg) */
   --border: #bdb8aa;      /* 1px rules and control borders */
   --rule: #d9d5c8;        /* lighter row separators */
-  --accent: #1f4e9c;      /* primary button, links, focus ring */
+  --placeholder: #757168; /* placeholder text: lighter than typed text, 4.8:1 on --panel */
+  --accent: #1f4e9c;     /* primary button, links, focus ring */
   --accent-text: #ffffff;
   --selected: #e4eaf4;    /* background of the selected row */
   --danger: #9b1c1c;      /* destructive action text and border */
@@ -65,7 +66,7 @@ input, select {
   color: var(--text); background: var(--panel); border: 1px solid var(--border);
 }
 input.mono { font-family: var(--mono); font-size: 13px; }
-input::placeholder { color: var(--muted); opacity: 1; }
+input::placeholder { color: var(--placeholder); opacity: 1; }
 input:focus-visible, select:focus-visible, button:focus-visible,
 .output:focus-visible, input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
@@ -89,6 +90,8 @@ button.danger:hover:not(:disabled) { background: var(--err-bg); border-color: va
 }
 label { display: grid; gap: 2px; align-content: start; min-width: 0; color: var(--muted); font-size: 12px; }
 label.wide, .wide { grid-column: 1 / -1; }
+/* the network select holds "none (own empty namespace)": give it two grid columns */
+label:has(> #f-net) { grid-column: span 2; }
 /* the checkbox and its text on ONE line, flush with the grid's left edge */
 label.check {
   display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px;
@@ -145,5 +148,6 @@ td .btn-row { display: flex; gap: 6px; white-space: nowrap; }
 }
 @media (max-width: 420px) {
   #launch-form { grid-template-columns: 1fr; }
+  label:has(> #f-net) { grid-column: span 1; }
   .exec { flex-direction: column; }
 }
