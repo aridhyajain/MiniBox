@@ -206,6 +206,15 @@ static int set_hostname(const char *name)
     return 0;
 }
 
+/* Give eth0 its address 10.0.<index>.2/24 and bring it up. */
+static int set_container_address(int index)
+{
+    char host[NET_ADDR_LEN], cont[NET_ADDR_LEN];
+
+    net_subnet_addrs(index, host, cont);
+    return net_set_ipv4(NET_CONTAINER_IF, cont, NET_PREFIX);
+}
+
 /* Tell the parent we are ready, then block until it says go (or abort). */
 static int child_handshake(struct sync_pipes *p)
 {
@@ -241,8 +250,7 @@ static int child_setup(const struct child_args *args)
         return -1;
     if (child_handshake(args->pipes) == -1)
         return -1;
-    if (cfg->net == NET_VETH &&
-        net_set_ipv4(NET_CONTAINER_IF, NET_CONTAINER_ADDR, NET_PREFIX) == -1)
+    if (cfg->net == NET_VETH && set_container_address(cfg->net_index) == -1)
         return -1;
     if (chdir("/") == -1) {
         perror("chdir(/)");
@@ -290,7 +298,7 @@ static int parent_network_setup(const struct container_config *cfg, pid_t pid)
 {
     if (cfg->net != NET_VETH)
         return 0;
-    return net_veth_setup(pid);
+    return net_veth_setup(pid, cfg->net_index);
 }
 
 /* Wait for the child; convert its wait status to a shell-style exit code. */
@@ -335,7 +343,7 @@ static int parent_setup(const struct container_config *cfg, pid_t pid,
         return -1;
     }
     if (cgroup_limits_set(&cfg->limits) &&
-        cgroup_setup(cg, pid, &cfg->limits) == -1) {
+        cgroup_setup(cg, cfg->id, pid, &cfg->limits) == -1) {
         fprintf(stderr, "minibox: cgroup setup failed; container stopped\n");
         return -1;
     }
@@ -396,6 +404,8 @@ static int supervise(const struct container_config *cfg, pid_t pid,
     close_pipes(pipes);
     if (setup_failed && !child_died)
         kill_child(pid);
+    else if (!setup_failed && cfg->on_started != NULL)
+        cfg->on_started(pid, cfg->on_started_arg);
 
     result = wait_for_child(pid);
     target_pid = 0;               /* reaped: the PID may be reused now */

@@ -152,3 +152,56 @@ Inside a PID namespace, the init process (PID 1) only receives signals from insi
 a handler (SIGKILL from the parent namespace always works). So `minibox run -- timeout 3 sh -c 'busy loop'` never
 stops: busybox `timeout` execs the loop as PID 1, and its SIGTERM is dropped. The fix is to run it under a shell:
 `sh -c 'timeout 3 ...; true'`. A real container runtime solves this with a tiny init process (like `tini`).
+
+## Phase 4 – managing containers (run -d, ps, logs, stop, rm)
+
+### Why is there a long-lived monitor process?
+A container is only a process in some namespaces. Somebody has to stay behind as its **parent**: only a parent can
+`wait()` for the child and learn its exit code, and somebody has to remove the cgroup and the veth after it ends.
+With a foreground `minibox run` that somebody is the `minibox` process itself. With `run -d` the command line must
+return at once, so `minibox` forks a **monitor** that carries on in the background: it starts the container, waits for
+it, then writes `status=exited`, the exit code and the finish time, and cleans up. Without it, a background container
+would end with its exit code lost and a leaked cgroup and veth.
+
+### What does "daemonizing with setsid" mean?
+A daemon is a background process with no link to the terminal it was started from. The monitor does four things:
+1. `fork()` – the parent returns to the shell, the child continues (and is adopted by init when the parent exits).
+2. `setsid()` – starts a **new session** with no controlling terminal. Ctrl-C and the hang-up signal sent when you close
+   the terminal go to the terminal's foreground process group, so they no longer reach it.
+3. stdin from `/dev/null`, stdout and stderr to the log file (opened `O_APPEND`, so writes always go to the end).
+   The container inherits these, which is how its output ends up in `minibox logs`.
+4. `chdir("/")` so it does not keep a directory busy.
+The parent waits on a pipe until the monitor reports that the container started, and then prints only the ID.
+
+### Why does PID 1 ignore SIGTERM?
+The first process of a PID namespace is its init, and the kernel protects init: a signal sent from an **ancestor**
+namespace (the host) is only delivered if init has **installed a handler** for it. The exceptions are `SIGKILL` and
+`SIGSTOP`, which always work. A plain `sleep` or `sh` as PID 1 has no SIGTERM handler, so `minibox stop` sends SIGTERM,
+nothing happens, and after the timeout it sends SIGKILL. The container then ends with exit code 137 (128 + 9).
+`stop` therefore does what `docker stop` does: polite signal, wait N seconds, then force. Real runtimes put a small init
+(`tini`) in front of the command that forwards signals. If the program installs a handler (e.g. `trap`), SIGTERM works.
+
+### How can separate minibox commands find a container?
+They are different processes, so they share only the filesystem. Each container has a directory
+`/var/lib/minibox/containers/<id>/` with a plain text `state` file (id, name, status, PID, monitor PID, limits, ...)
+and the `log`. `ps`, `logs`, `stop`, `rm` just read those files; `stop` then sends a signal to the PID stored in the file.
+The state file is **replaced atomically** (write a temp file, then `rename`), so a reader never sees half a file.
+The ID is claimed with `mkdir` (atomic: it fails if it exists), and a `flock` lock makes "check the name, pick an ID, pick
+a free subnet" one step, so two `run` commands at once cannot get the same name or subnet.
+
+### What happens when the monitor dies?
+Say somebody does `kill -9` on it. Nothing records the exit and nothing cleans up. The container itself is **not** killed
+(only the death of its own init would do that), so it keeps running, and its cgroup and veth stay. The state file still
+says `running`, but `kill(monitor_pid, 0)` fails (`ESRCH`; a zombie is also treated as dead), so `ps` shows **dead**.
+`minibox rm` then kills the leftover init, removes `box-<id>`, deletes the host veth by name and deletes the state.
+Before killing, it checks in `/proc/<pid>/status` (`NSpid:`) that the PID is really the init of a PID namespace, so a
+reused PID of an unrelated process is never killed.
+
+### Why does every veth container get its own subnet?
+The host end of a veth pair needs an IP in the container's subnet. If two containers both used 10.0.0.0/24 the host
+would have the same address on two interfaces and routing would be ambiguous. So container n gets host 10.0.n.1 and
+container 10.0.n.2 on 10.0.n.0/24, where n is the lowest number no running container uses. One container alone still
+gets 10.0.0.x. The interface names (`vethh<pid>`) were already unique because a PID is.
+
+### Why is the exit recorded after the cleanup?
+So that `stop` can trust the state: as soon as `status` is `exited`, the cgroup and the veth are already gone.

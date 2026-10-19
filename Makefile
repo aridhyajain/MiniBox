@@ -3,10 +3,11 @@ CC      := gcc
 CFLAGS  := -std=c11 -Wall -Wextra -Werror -g -Iinclude -MMD -MP
 BUILD   := build
 TARGET  := minibox
-SRCS    := src/main.c src/container.c src/rootfs.c src/net.c src/cgroup.c
+SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
+           src/container.c src/rootfs.c src/net.c src/cgroup.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-phase3 demo
+.PHONY: all clean check-env rootfs test test-phase3 test-phase4 demo
 
 all: $(TARGET)
 
@@ -31,10 +32,15 @@ test: $(TARGET)
 	@echo "  sudo tests/phase1_test.sh"
 	@echo "  sudo tests/phase2_test.sh"
 	@echo "  sudo tests/phase3_test.sh"
+	@echo "  sudo tests/phase4_test.sh"
 
 test-phase3: $(TARGET)
 	@echo "Phase 3 tests need root. Run:"
 	@echo "  sudo tests/phase3_test.sh"
+
+test-phase4: $(TARGET)
+	@echo "Phase 4 tests need root. Run:"
+	@echo "  sudo tests/phase4_test.sh"
 
 demo: $(TARGET)
 	@echo "Review 1 demo needs root. Run:"

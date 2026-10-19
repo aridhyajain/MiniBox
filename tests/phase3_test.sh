@@ -160,7 +160,7 @@ report "container without limits works and is not in a minibox cgroup" $? "exit 
 report "container without limits created no box-* cgroup" $?
 out=$(mb --pids 32 -- cat /proc/self/cgroup)
 echo "$out" | grep -q '/minibox/box-'
-report "container with limits runs inside /minibox/box-<pid>" $? "cgroup '$out'"
+report "container with limits runs inside /minibox/box-<id>" $? "cgroup '$out'"
 
 echo
 if [ "$FAILS" -eq 0 ]; then

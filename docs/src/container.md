@@ -13,11 +13,12 @@ cgroup_check_v2()  (only if limits given; before clone)
 install SIGINT/SIGTERM handlers
 clone() --------------------------------->  sethostname, bring lo up, rootfs_setup
   wait on ready pipe  <-------------------  write 'R'
-  cgroup_setup(pid): leaf + limits +        read go pipe  (blocks)
+  cgroup_setup(id, pid): box-<id> + limits +        read go pipe  (blocks)
     write pid to cgroup.procs
-  (--net veth) net_veth_setup(pid)
-  write 'G' (or 'A' + SIGKILL on failure) ->  'G': (veth) eth0 10.0.0.2/24, chdir, execvp
-waitpid                                      'A' or EOF: exit 1
+  (--net veth) net_veth_setup(pid, n)
+  write 'G' (or 'A' + SIGKILL on failure) ->  'G': (veth) eth0 10.0.<n>.2/24, chdir, execvp
+on_started(pid) hook (monitor records pid)   'A' or EOF: exit 1
+waitpid
 net_veth_cleanup(pid)  (veth mode)
 --stats: print usage; oom_kill > 0 -> message, exit 137
 cgroup_remove()  (rmdir leaf, retry up to 1 s)
@@ -49,18 +50,25 @@ A signal arriving before `target_pid` is set is caught by the `stop_signal` chec
 | `install_stop_handlers(old)`, `restore_handlers(old)` | saved actions | 0 / -1, – | `sigaction` for SIGINT and SIGTERM |
 | `set_hostname(name)` | hostname | 0 / -1 | `sethostname` in the UTS ns |
 | `child_handshake(p)` | pipes | 0 / -1 | writes `'R'`, blocks for `'G'`; "aborted by parent" on `'A'`/EOF |
-| `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `net_set_ipv4` → `chdir("/")` → PATH/HOME |
+| `set_container_address(index)` | subnet index | 0 / -1 | `net_subnet_addrs` → `net_set_ipv4(eth0, 10.0.<index>.2, 24)` |
+| `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `set_container_address` → `chdir("/")` → PATH/HOME |
 | `child_main(arg)` | args | exit code | 1 on setup failure, 127 if `execvp` fails |
 | `parent_wait_ready(fd)` | fd | 0 / -1 | -1 on EOF (child died) or on a stop signal |
-| `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth only: `net_veth_setup(pid)` |
-| `parent_setup(cfg, pid, p, cg, &child_died)` | – | 0 / -1 | wait `'R'` → `cgroup_setup` (if limits; prints "cgroup setup failed; container stopped") → network → fails if a stop signal arrived |
+| `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth only: `net_veth_setup(pid, cfg->net_index)` |
+| `parent_setup(cfg, pid, p, cg, &child_died)` | – | 0 / -1 | wait `'R'` → `cgroup_setup(cg, cfg->id, ...)` (leaf `box-<id>`, if limits; prints "cgroup setup failed; container stopped") → network → fails if a stop signal arrived |
 | `release_child(p, ok)` | – | 0 if `'G'` sent | writes `'G'` or `'A'` |
 | `kill_child(pid)` | pid | – | `kill(SIGKILL)`, `ESRCH` ignored |
 | `wait_for_child(pid)` | pid | exit code, 128+sig, or -1 | `waitpid`, retries `EINTR` |
 | `report_early_exit(child_died, result)` | – | – | prints why the container ended early (died in setup / received SIGINT/SIGTERM) |
 | `finish_cgroup(cfg, cg, result)` | – | final exit code | if leaf exists: `--stats` output, OOM check (message + 137), `cgroup_remove` |
-| `supervise(cfg, pid, pipes)` | – | exit code or -1 | parent side after `clone`: setup, release, wait, veth + cgroup cleanup |
+| `supervise(cfg, pid, pipes)` | – | exit code or -1 | parent side after `clone`: setup, release, then (if set and setup succeeded) `cfg->on_started(pid, cfg->on_started_arg)`, wait, veth + cgroup cleanup |
 | `int container_run(const struct container_config *cfg)` | config | command's exit status (137 if OOM-killed), -1 if creation/cgroup/network setup failed | cgroup check, pipes, stack, handlers, `clone`, `supervise`, restore, `munmap` |
+
+## Phase 4 additions
+`container_config` gained `id` (names the cgroup leaf `box-<id>`), `net_index` (subnet `10.0.<n>.0/24`) and the
+`on_started` hook. The hook runs in the supervising process right after the child was released, with the init PID as
+seen from the host. The monitor (`src/monitor.c`) uses it to record `pid`/`started_at` and to tell `run -d` that the
+container is up. Everything else is unchanged; the id and the subnet are chosen by `state_create` before `container_run`.
 
 ## System calls used and why
 - `mmap`/`munmap` – child stack for `clone`.

@@ -1,7 +1,7 @@
 # include/cgroup.h
 
 ## Purpose
-Public interface of the cgroup module (used by `src/container.c` and `src/main.c`, implemented in `src/cgroup.c`).
+Public interface of the cgroup module (used by `src/container.c`, `src/commands.c` and `src/options.c`, implemented in `src/cgroup.c`).
 
 ## Declarations
 - Constants: `CGROUP_ROOT` (`/sys/fs/cgroup`), `CGROUP_BASE` (`/sys/fs/cgroup/minibox`),
@@ -9,8 +9,8 @@ Public interface of the cgroup module (used by `src/container.c` and `src/main.c
 - `struct cgroup_limits { long long memory_bytes; long cpu_quota_us; long pids_max; }` – 0 means "not set".
   `cpu_quota_us` is per `CGROUP_CPU_PERIOD`, so `--cpus 0.5` → 50000.
 - `struct cgroup { char path[CGROUP_PATH_LEN]; int created; }` – one container's leaf; `created` = must be removed.
-- `int cgroup_limits_set(lim)`, `int cgroup_check_v2(void)`, `int cgroup_setup(cg, pid, lim)`,
-  `void cgroup_print_stats(cg)`, `long long cgroup_oom_kills(cg)`, `void cgroup_remove(cg)`.
+- `int cgroup_limits_set(lim)`, `int cgroup_check_v2(void)`, `int cgroup_setup(cg, id, pid, lim)`,
+  `void cgroup_print_stats(cg)`, `long long cgroup_oom_kills(cg)`, `void cgroup_remove(cg)`, `void cgroup_remove_leftover(id)`.
 
 Signatures, return values, errors and side effects: `docs/src/cgroup.md`.
 

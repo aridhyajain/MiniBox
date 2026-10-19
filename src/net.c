@@ -179,16 +179,25 @@ void net_veth_names(pid_t pid, char host[NET_IFNAME_LEN], char cont[NET_IFNAME_L
     snprintf(cont, NET_IFNAME_LEN, "vethc%d", (int)pid);
 }
 
-int net_veth_setup(pid_t pid)
+void net_subnet_addrs(int index, char host[NET_ADDR_LEN], char cont[NET_ADDR_LEN])
+{
+    snprintf(host, NET_ADDR_LEN, "10.0.%d.1", index);
+    snprintf(cont, NET_ADDR_LEN, "10.0.%d.2", index);
+}
+
+int net_veth_setup(pid_t pid, int index)
 {
     char host[NET_IFNAME_LEN], cont[NET_IFNAME_LEN], pidstr[16];
+    char host_addr[NET_ADDR_LEN], cont_addr[NET_ADDR_LEN], host_cidr[NET_ADDR_LEN + 4];
     char *add[]  = { "ip", "link", "add", host, "type", "veth", "peer", "name", cont, NULL };
     /* moving to a netns identified by PID uses /proc/<pid>/ns/net */
     char *move[] = { "ip", "link", "set", cont, "netns", pidstr, "name", NET_CONTAINER_IF, NULL };
-    char *addr[] = { "ip", "addr", "add", NET_HOST_CIDR, "dev", host, NULL };
+    char *addr[] = { "ip", "addr", "add", host_cidr, "dev", host, NULL };
     char *up[]   = { "ip", "link", "set", host, "up", NULL };
 
     net_veth_names(pid, host, cont);
+    net_subnet_addrs(index, host_addr, cont_addr);
+    snprintf(host_cidr, sizeof(host_cidr), "%s/%d", host_addr, NET_PREFIX);
     snprintf(pidstr, sizeof(pidstr), "%d", (int)pid);
     if (run_ip_checked(add) == -1 || run_ip_checked(move) == -1)
         return -1;

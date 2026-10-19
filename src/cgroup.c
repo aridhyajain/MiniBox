@@ -9,7 +9,7 @@
  * Layout used by minibox:
  *   /sys/fs/cgroup                root: enables memory/cpu/pids for children
  *   └── minibox/                  no processes; enables controllers for children
- *       └── box-<host pid>/       one leaf per container: limits + processes
+ *       └── box-<container id>/   one leaf per container: limits + processes
  *
  * Two v2 rules shape this:
  *  1. A controller can only be used by a cgroup if its PARENT lists it in
@@ -257,14 +257,15 @@ static int add_process(const char *leaf, pid_t pid)
     return write_in(leaf, "cgroup.procs", value);
 }
 
-int cgroup_setup(struct cgroup *cg, pid_t pid, const struct cgroup_limits *lim)
+int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
+                 const struct cgroup_limits *lim)
 {
     int n;
 
     cg->created = 0;
     if (prepare_base() == -1)
         return -1;
-    n = snprintf(cg->path, sizeof(cg->path), "%s/box-%d", CGROUP_BASE, (int)pid);
+    n = snprintf(cg->path, sizeof(cg->path), "%s/box-%s", CGROUP_BASE, id);
     if (n < 0 || (size_t)n >= sizeof(cg->path)) {
         fprintf(stderr, "minibox: cgroup path too long\n");
         return -1;
@@ -356,4 +357,14 @@ void cgroup_remove(struct cgroup *cg)
     }
     fprintf(stderr, "minibox: could not remove %s: %s (remove it with: sudo rmdir %s)\n",
             cg->path, strerror(errno), cg->path);
+}
+
+void cgroup_remove_leftover(const char *id)
+{
+    struct cgroup cg = { "", 1 };
+    int n = snprintf(cg.path, sizeof(cg.path), "%s/box-%s", CGROUP_BASE, id);
+
+    if (n < 0 || (size_t)n >= sizeof(cg.path) || access(cg.path, F_OK) == -1)
+        return;                     /* no such leaf: nothing to clean */
+    cgroup_remove(&cg);
 }

@@ -25,7 +25,7 @@ Needs `./minibox`, the Alpine rootfs, and host `timeout`. Inside the container o
 5. `--memory 64M -- nosuchcmd`: exit 127, no leftovers.
 6. SIGTERM to a running `minibox` (`--pids 32 -- sleep 30`): exit 137, no leftovers.
 7. No limit flags: works, `/proc/self/cgroup` does not contain `/minibox/`, no `box-*` created;
-   with `--pids 32` it does show `/minibox/box-<pid>` (no cgroup namespace, so the host path is visible).
+   with `--pids 32` it does show `/minibox/box-<id>` (no cgroup namespace, so the host path is visible).
 
 ## Notes on the test design
 - **`timeout` must not be PID 1.** Busybox `timeout` execs the command in its own process and sends it SIGTERM.

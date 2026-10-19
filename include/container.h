@@ -12,6 +12,12 @@ struct container_config {
     struct cgroup_limits limits; /* all 0 = no cgroup is created */
     int stats;                 /* 1 = print cgroup usage after exit */
     char *const *argv;         /* command to run, NULL-terminated, argv[0] = program */
+    const char *id;            /* container ID: names the cgroup leaf box-<id> */
+    int net_index;             /* veth subnet 10.0.<net_index>.0/24 (NET_VETH only) */
+    /* Called once, in the supervising process, when the container has been
+     * released to run; `pid` is its init PID as seen from the host. May be NULL. */
+    void (*on_started)(pid_t pid, void *arg);
+    void *on_started_arg;
 };
 
 /*

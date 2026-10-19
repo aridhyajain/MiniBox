@@ -9,7 +9,7 @@ Only plain `open`/`read`/`write`/`close`/`mkdir`/`rmdir` on `/sys/fs/cgroup` —
 ```
 /sys/fs/cgroup                 root: cgroup.subtree_control gets +memory +cpu +pids
 └── minibox/                   created once, kept; NO processes; subtree_control +memory +cpu +pids
-    └── box-<host pid>/        one per container: limits + the container's processes
+    └── box-<container id>/    one per container: limits + the container's processes
 ```
 Why: (1) a cgroup can only use a controller its **parent** enabled in `cgroup.subtree_control`, so controllers are
 enabled top-down; (2) the **no-internal-processes** rule forbids processes in a non-root cgroup that enables
@@ -21,10 +21,11 @@ concurrent container could be creating its leaf at that moment.
 |----------|--------|---------|-----------------------|
 | `int cgroup_limits_set(const struct cgroup_limits *lim)` | limits | 1 if any of memory/cpu/pids is set | – |
 | `int cgroup_check_v2(void)` | – | 0 / -1 | `statfs(/sys/fs/cgroup)` must report `CGROUP2_SUPER_MAGIC`; `cgroup.controllers` must list `memory`, `cpu`, `pids`; clear message otherwise |
-| `int cgroup_setup(struct cgroup *cg, pid_t pid, const struct cgroup_limits *lim)` | leaf to fill, container host PID, limits | 0 / -1 | `prepare_base`, `mkdir box-<pid>` (sets `cg->created`), `apply_limits`, `add_process`. On -1 with `cg->created` set, the caller must call `cgroup_remove`. |
+| `int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid, const struct cgroup_limits *lim)` | leaf to fill, container ID, container host PID, limits | 0 / -1 | `prepare_base`, `mkdir box-<id>` (sets `cg->created`), `apply_limits`, `add_process`. On -1 with `cg->created` set, the caller must call `cgroup_remove`. |
 | `void cgroup_print_stats(const struct cgroup *cg)` | leaf | – | prints `[stats]` lines to stderr: `memory.peak`, `cpu.usage_usec` (from `cpu.stat`), `pids.peak`, `oom_kill` (from `memory.events`); skips missing files |
 | `long long cgroup_oom_kills(const struct cgroup *cg)` | leaf | `oom_kill` count, 0 if unknown | – |
 | `void cgroup_remove(struct cgroup *cg)` | leaf | – | `rmdir`, retried every 100 ms for up to 1 s while `EBUSY` (processes still exiting); on failure prints the `sudo rmdir` command |
+| `void cgroup_remove_leftover(const char *id)` | container ID | – | for `minibox rm` of a dead container: `rmdir box-<id>` via `cgroup_remove`; silent if the leaf does not exist (the container had no limits) |
 | static `join`, `write_file`, `read_file`, `write_in`, `file_exists`, `has_word` | – | 0/-1 or bool | file helpers; `write_file` reports path + value + `strerror` because the kernel rejects bad values in `write()` |
 | static `enable_controllers(dir)` | cgroup dir | 0 / -1 | reads `cgroup.subtree_control`, writes `+memory`, `+cpu`, `+pids` only for missing ones |
 | static `prepare_base()` | – | 0 / -1 | enable on root → `mkdir minibox` (EEXIST ok) → enable on `minibox/` |

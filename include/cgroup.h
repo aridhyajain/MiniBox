@@ -16,7 +16,7 @@ struct cgroup_limits {
     long pids_max;            /* pids.max */
 };
 
-/* One container's leaf cgroup: CGROUP_BASE/box-<host pid>. */
+/* One container's leaf cgroup: CGROUP_BASE/box-<container id>. */
 struct cgroup {
     char path[CGROUP_PATH_LEN];
     int created;              /* 1 once the directory exists (needs removal) */
@@ -33,11 +33,12 @@ int cgroup_check_v2(void);
 
 /*
  * Create CGROUP_BASE (if needed) with controllers enabled, create the leaf
- * box-<pid>, write the limits and move `pid` into it (cgroup.procs).
+ * box-<id>, write the limits and move `pid` into it (cgroup.procs).
  * Returns 0 or -1 (message printed). If cg->created is set afterwards the
  * caller must call cgroup_remove(), also on failure.
  */
-int cgroup_setup(struct cgroup *cg, pid_t pid, const struct cgroup_limits *lim);
+int cgroup_setup(struct cgroup *cg, const char *id, pid_t pid,
+                 const struct cgroup_limits *lim);
 
 /* Print memory.peak, cpu.stat usage_usec, pids.peak, oom_kill to stderr. */
 void cgroup_print_stats(const struct cgroup *cg);
@@ -47,5 +48,11 @@ long long cgroup_oom_kills(const struct cgroup *cg);
 
 /* rmdir the leaf, retrying for up to 1 s while it is still busy. */
 void cgroup_remove(struct cgroup *cg);
+
+/*
+ * Remove the leaf box-<id> left behind by a dead container. Nothing to do
+ * (and no message) if it does not exist, e.g. the container had no limits.
+ */
+void cgroup_remove_leftover(const char *id);
 
 #endif /* MINIBOX_CGROUP_H */
