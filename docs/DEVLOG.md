@@ -239,3 +239,10 @@
 ## 2026-10-19 – UI CSS: network select width, lighter placeholders
 - `ui/static/style.css` only. The network `<select>` was cut off ("none (own empty namespac"): its label now spans two grid columns (`label:has(> #f-net)`), reset to one column under 420 px so it shrinks with the grid. Placeholders (command, memory, cpus, pids, exec) use a new `--placeholder` (#757168, 4.8:1 on the field background; typed text 17:1) instead of `--muted`.
 - Docs: `docs/ui/static/style.md`. Template, Python, `src/` and `include/` untouched; no git, no sudo.
+
+## 2026-10-19 – README tidy-up and MIT license
+- `README.md`: removed " (OS lab project)" from the description sentence; removed the trailing phase/review markers from five headings (Manage containers, Run a command in a running container, Web UI, Demo, Benchmarks); added a short "License" section at the end. Body text unchanged.
+- New `LICENSE` (standard MIT text, copyright 2026 Aridhya Jain). It is not a source file, so it has no mirror in `docs/`.
+- `scripts/build_deliverables.py` finds README sections by heading prefix, so it and its tests needed no change; no docs link to README anchors.
+- `src/` and `include/` untouched; no git, no sudo.
+- `scripts/build_deliverables.py`: `LICENSE` added to `TREE_SKIP_FILES`. Without it `tree_omitted()` listed `LICENSE` (no purpose, no doc) and `test_real_repository_tables_are_complete` failed. Docs updated: `docs/scripts/build_deliverables.md`, `docs/tests/test_build_deliverables.md`.

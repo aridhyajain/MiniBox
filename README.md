@@ -1,6 +1,6 @@
 # minibox
 
-A minimal container runtime in C using Linux namespaces and cgroups v2 (OS lab project).
+A minimal container runtime in C using Linux namespaces and cgroups v2.
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ with the command's status (128+N if it was killed by signal N). So `stop` of a n
 SIGKILL (137), and a program like busybox `timeout` can no longer hang the container by becoming PID 1. It costs one extra process per container; with `--pids` use at least 2.
 `ps` shows `yes` in the INIT column and `ps --json` has `"init":true`. The web UI has a matching checkbox. Without `--init` nothing changes.
 
-## Manage containers (Phase 4a)
+## Manage containers
 
 Every container has an ID (12 hex characters) and a directory with its state in `/var/lib/minibox/containers/<id>/`
 (override with `MINIBOX_STATE_DIR`). Commands that take `<id|name>` accept either.
@@ -101,7 +101,7 @@ sudo bash tests/clone3_test.sh # clone3 into the cgroup vs the cgroup.procs fall
 sudo bash tests/run_all.sh   # all of the above, one PASS/FAIL line per script (make test-all prints this)
 ```
 
-## Run a command in a running container (Phase 4b)
+## Run a command in a running container
 
 `exec` joins the namespaces and the cgroup of a running container (like `docker exec`). stdin/stdout/stderr are yours,
 so a shell is interactive, and the exit status is the command's.
@@ -118,7 +118,7 @@ sudo ./minibox stop demo && sudo ./minibox rm demo
 `exec` works only on a `running` container and needs root. Processes started with `exec` belong to the container's
 cgroup, so its limits apply to them too.
 
-## Web UI (Phase 5)
+## Web UI
 
 A local dashboard to launch, list, stop, remove, read logs of and `exec` into containers. It only calls the `minibox` CLI.
 
@@ -136,7 +136,7 @@ sudo scripts/run_ui.sh 8080      # starts the server on 127.0.0.1:8080 (root, be
 - Tests: `python3 -m unittest tests/test_ui_validation.py -v` (no root) and `sudo tests/phase5_test.sh` (needs `scripts/setup_ui.sh` first).
   `make ui-setup` and `make ui-run` print the commands.
 
-## Demo (Review 1)
+## Demo
 
 ```sh
 sudo scripts/demo_review1.sh          # interactive, Enter between steps (~5 min)
@@ -145,7 +145,7 @@ sudo scripts/demo_review1.sh --auto   # 2 s pause per step, for recording
 
 See `docs/REVIEW1.md` for the presentation guide and likely viva questions. `make demo` prints these commands.
 
-## Benchmarks (Phase 6)
+## Benchmarks
 Startup time, memory per container and limit-enforcement checks, with CSV results and SVG charts. They need root, so make only prints the commands:
 ```sh
 make bench-quick     # prints: sudo python3 bench/bench.py all --quick
@@ -231,3 +231,7 @@ See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md`, `docs/DEVLOG.md`, `docs/BENCHM
 - The kernel mechanism of the migration stall (RCU grace period after network teardown) is an untested hypothesis; the probe sample is small.
 - No user namespace: container root is real root with full capabilities.
 - Not a hard security boundary: shared kernel, no seccomp, no capability dropping. Isolation for learning.
+
+## License
+
+MiniBox is released under the MIT License, see LICENSE.
