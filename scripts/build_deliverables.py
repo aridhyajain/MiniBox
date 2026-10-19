@@ -5,14 +5,17 @@ Subcommands:
   check-tools   which converters exist and which route is chosen
   coverage      every docs/**/*.md file: included, excluded or missing
   docs          build ~/minibox-deliverables/MiniBox_Documentation.docx and verify it
+  report        build ~/minibox-deliverables/MiniBox_Report.pdf (the whole project report) and verify it
 
 Everything is read from the repo's existing files; nothing is written inside the repo.
 Details: docs/scripts/build_deliverables.md
 """
 import argparse
 import datetime
+import html as htmllib
 import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
@@ -29,6 +32,7 @@ EXCLUDED = {
     "docs/DEVLOG.md": "personal notes",
     "docs/scripts/build_deliverables.md": "documents the deliverable tooling itself, not the project",
     "docs/tests/test_build_deliverables.md": "documents the deliverable tooling itself, not the project",
+    "docs/scripts/make_report_diagrams.md": "documents the deliverable tooling itself, not the project",
 }
 # README sections (level-2 heading prefix) left out for the same reason.
 EXCLUDED_README_SECTIONS = {
@@ -46,6 +50,9 @@ TEXT_WIDTH_TWIPS = int(round(TEXT_WIDTH_CM / 2.54 * 1440))   # 1 twip = 1/1440 i
 PIP_DOCX = ["python-docx==1.1.2", "lxml==6.1.3", "typing_extensions==4.16.0"]
 PIP_SVG = ["cairosvg==2.8.2", "cairocffi==1.7.1", "cffi==2.1.1", "pycparser==3.11", "cssselect2==0.10.1",
            "tinycss2==1.5.1", "webencodings==0.6.1", "defusedxml==0.7.1", "pillow==13.0.0"]
+
+PIP_PDF = ["weasyprint==70.0", "pypdfium2==5.14.0", "pillow==13.0.0", "pydyf==0.13.0", "pyphen==0.18.1",
+           "tinycss2==1.5.1", "cssselect2==0.10.1", "fonttools==4.67.0", "brotli==1.2.0", "zopfli==0.4.3"]
 
 CONFIG_DEFAULTS = {
     "student_name": "Aridhya Jain",
@@ -157,7 +164,7 @@ def config_values(cfg, today=None):
 
 TOOL_NAMES = ("pandoc", "soffice", "libreoffice", "rsvg-convert", "wkhtmltopdf", "chromium",
               "chromium-browser", "google-chrome")
-MODULE_NAMES = ("docx", "cairosvg", "weasyprint", "reportlab")
+MODULE_NAMES = ("docx", "cairosvg", "weasyprint", "pypdfium2", "reportlab")
 
 
 def venv_python(out_dir):
@@ -206,7 +213,8 @@ def choose_routes(tools, modules):
         pdf = "reportlab (drawn from the document model)"
     else:
         pdf = None
-    return {"markdown_to_docx": md, "svg_to_png": svg, "pdf": pdf}
+    report = "weasyprint + pypdfium2 (page check)" if modules.get("weasyprint") and modules.get("pypdfium2") else None
+    return {"markdown_to_docx": md, "svg_to_png": svg, "pdf": pdf, "report_pdf": report}
 
 
 def venv_commands(out_dir):
@@ -223,14 +231,20 @@ def cmd_check_tools(args):
     for t in TOOL_NAMES:
         print("  %-17s %s" % (t, tools[t] or "missing"))
     print("Python modules (system python or %s/venv):" % out)
-    labels = {"docx": "python-docx", "cairosvg": "cairosvg", "weasyprint": "weasyprint", "reportlab": "reportlab"}
+    labels = {"docx": "python-docx", "cairosvg": "cairosvg", "weasyprint": "weasyprint", "pypdfium2": "pypdfium2",
+              "reportlab": "reportlab"}
     for m in MODULE_NAMES:
         print("  %-17s %s" % (labels[m], modules[m] or "missing"))
     routes = choose_routes(tools, modules)
     print("Chosen routes:")
     print("  Markdown -> docx : %s" % (routes["markdown_to_docx"] or "NONE"))
     print("  SVG -> PNG       : %s" % (routes["svg_to_png"] or "NONE"))
-    print("  PDF (later task) : %s" % (routes["pdf"] or "NONE (only needed for the PDF report)"))
+    print("  PDF report       : %s" % (routes["report_pdf"] or "NONE (needs weasyprint and pypdfium2 in the venv)"))
+    print("  Word render check: %s" % ((tools["soffice"] or tools["libreoffice"]) and "LibreOffice (docx -> pdf)" or "NONE (optional)"))
+    print("Fonts of the PDF report (fc-list):")
+    for f in REPORT_FONTS:
+        have = font_available(f)
+        print("  %-17s %s" % (f, "unknown (fc-list not found)" if have is None else ("found" if have else "MISSING")))
     print("  (pandoc is %s; the docx route does not use it)" % ("present" if tools["pandoc"] else "absent"))
     todo = []
     if not routes["markdown_to_docx"]:
@@ -242,10 +256,10 @@ def cmd_check_tools(args):
         print("Run these commands (this script never installs anything):")
         for c in todo:
             print("  " + c)
-    if not routes["pdf"]:
-        print("For the later PDF report: sudo apt install libreoffice-writer")
-    elif not (tools["soffice"] or tools["libreoffice"]):
-        print("Optional (render check of the docx): sudo apt install libreoffice-writer")
+    if not routes["report_pdf"]:
+        print("For the PDF report (no sudo): %s/venv/bin/pip install %s" % (out, " ".join(PIP_PDF)))
+    if not (tools["soffice"] or tools["libreoffice"]):
+        print("Optional (render check of the Word file): sudo apt install libreoffice-writer")
     return 0 if routes["markdown_to_docx"] and routes["svg_to_png"] else 1
 
 
@@ -1358,6 +1372,731 @@ def cmd_docs(args):
     return 0
 
 
+# ---------------------------------------------------------------- PDF report (Part 1)
+
+REPORT_PDF = "MiniBox_Report.pdf"
+REPORT_REFERENCES = "references.md"
+REPORT_ABSTRACT = "00_abstract.md"
+REPORT_CHAPTERS = ("01_introduction.md", "02_background.md", "03_design.md", "04_implementation.md",
+                   "05_ui_security.md", "06_testing.md", "07_evaluation.md", "08_os_concepts.md",
+                   "09_limitations.md", "10_conclusion.md")
+REPORT_APPENDICES = ("appendix_a_cli.md", "appendix_b_layout.md", "appendix_c_reproduce.md")
+REPORT_PAGES = (30, 60)             # allowed page count of the whole PDF
+BENCH_BEFORE, BENCH_AFTER = "reference-before-clone3", "reference"    # result folders used by {{gen:...}}
+PROBE_FILE = "analysis/attach_stall_probe.txt"
+# Left out of the repository tree in Appendix B (build outputs, caches, third-party code, empty markers).
+TREE_SKIP_DIRS = {"venv", "__pycache__", "results", ".cache", "build", "rootfs"}
+TREE_SKIP_FILES = {".gitkeep", ".gitignore", "minibox"}
+TREE_GROUPS = (".", "include", "src", "scripts", "tests", "ui", "bench", "docs")
+ABSTRACT_WORDS = (150, 250)
+REPORT_FONTS = ("Liberation Serif", "DejaVu Sans Mono", "Liberation Sans")
+MAX_HEADING_LEVEL = 3
+REPORT_SHORT_TITLE_MAX = 60
+WIDE_FIGURE_UNITS = 700             # an SVG wider than this (the benchmark charts) gets a landscape page, so its text stays legible
+WIDE_CODE_CHARS = 85                # a code block with a longer line is printed in a smaller font
+
+RE_FIG_LINE = re.compile(r"^!\[([^\]]*)\]\(([^)\s]+)\)\{#fig:([\w-]+)\}\s*$")
+RE_TAB_LINE = re.compile(r"^Table:\s+(.*?)\s*\{#tab:([\w-]+)\}\s*$")
+RE_SENTINEL = re.compile(r"^@@CAP(\d+)@@$")
+RE_HEAD_NAME = re.compile(r"\s*\{#sec:([\w-]+)\}\s*$")
+RE_CITE = re.compile(r"\[ref:([\w-]+)\]")
+RE_PLACEHOLDER = re.compile(r"\b(?:TODO|FIXME|TBD|XXX)\b|\?\?\?")
+RE_UNRESOLVED = re.compile(r"\{(?:fig|tab|sec):|\[ref:|@@CAP|\{\{gen:")
+RE_GEN = re.compile(r"^\{\{gen:([\w:./-]+)\}\}\s*$")
+
+
+def font_available(name):
+    """True/False if `fc-list` knows the font family, None if fc-list does not exist."""
+    if not shutil.which("fc-list"):
+        return None
+    r = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True)
+    return any(name == fam.strip() for line in r.stdout.splitlines() for fam in line.split(","))
+
+
+def count_words(text):
+    return len(re.findall(r"[\w'-]+", text))
+
+
+def parse_references(text):
+    """references.md: one 'key | text' per line ('#' lines and blank lines ignored) -> {key: text}."""
+    refs = {}
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        key, sep, body = line.partition("|")
+        key, body = key.strip(), body.strip()
+        if not sep or not re.fullmatch(r"[\w-]+", key) or not body:
+            raise BuildError("%s line %d: expected 'key | reference text', got %r" % (REPORT_REFERENCES, n, line))
+        if key in refs:
+            raise BuildError("%s line %d: duplicate reference key %r" % (REPORT_REFERENCES, n, key))
+        refs[key] = body
+    return refs
+
+
+# ------------------------------------------------------------ generated content ({{gen:NAME}})
+
+def load_bench_tables(repo=REPO):
+    """The module bench/make_report_tables.py, loaded from the repo (its functions make every result table)."""
+    path = Path(repo) / "bench" / "make_report_tables.py"
+    spec = importlib.util.spec_from_file_location("make_report_tables", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def first_sentence(text):
+    """The first sentence of `text` (up to the first full stop followed by a space)."""
+    text = re.sub(r"\s+", " ", text).strip()
+    m = re.search(r"(?<=[.!?])\s", text)
+    return text[:m.start()] if m else text
+
+
+def purpose_of(rel, repo=REPO):
+    """One-line purpose of a repo file, from its doc file docs/<path without extension>.md.
+
+    A file directly in docs/ gives its title; any other Markdown file without a doc uses its own first paragraph. Returns '' if there is nothing to take."""
+    repo = Path(repo)
+    rel_p = Path(rel)
+    if rel_p.parent == Path("docs") and rel_p.suffix == ".md" and (repo / rel_p).exists():
+        m = re.search(r"^#\s+(.+?)\s*$", (repo / rel_p).read_text(encoding="utf-8"), re.M)
+        return m.group(1) if m else ""            # a top-level document: its title
+    doc = repo / "docs" / rel_p.parent / (rel_p.stem + ".md")
+    if not doc.exists() and rel_p.suffix == ".md":
+        doc = repo / rel_p                         # a Markdown file describes itself
+    if not doc.exists():
+        return ""
+    text = doc.read_text(encoding="utf-8")
+    got = first_paragraph_of(text, "Purpose")
+    if not got:
+        paras = [b for b in parse_markdown(text, ".", 0, drop_title=True) if b["t"] == "p"]
+        got = runs_text(paras[0]["runs"]) if paras else ""
+    return first_sentence(got)
+
+
+def tree_files(group, repo=REPO):
+    """Sorted repo-relative paths of one Appendix B group ('.' = the top-level files, 'docs' = docs/*.md only)."""
+    repo = Path(repo)
+    if group not in TREE_GROUPS:
+        raise BuildError("unknown tree group %r (known: %s)" % (group, ", ".join(TREE_GROUPS)))
+    out = []
+    if group in (".", "docs"):
+        base = repo if group == "." else repo / "docs"
+        out = [p for p in base.iterdir() if p.is_file()]
+    else:
+        for dirpath, dirnames, filenames in os.walk(repo / group):
+            dirnames[:] = [d for d in dirnames if d not in TREE_SKIP_DIRS]
+            out += [Path(dirpath) / f for f in filenames]
+    rels = sorted(p.relative_to(repo).as_posix() for p in out
+                  if p.name not in TREE_SKIP_FILES and p.suffix not in (".pyc", ".o", ".d"))
+    return rels
+
+
+def tree_table(group, repo=REPO):
+    """Markdown table 'File | Purpose' for one group of the repository tree. Files with no purpose to
+    take from the docs are not listed (the build prints them, see `tree_omitted`)."""
+    rows = []
+    for rel in tree_files(group, repo):
+        purpose = purpose_of(rel, repo)
+        if purpose:
+            rows.append("| `%s` | %s |" % (rel, purpose.replace("|", "\\|")))
+    if not rows:
+        raise BuildError("tree group %r has no files with a documented purpose" % group)
+    return "| File | Purpose |\n|---|---|\n" + "\n".join(rows)
+
+
+def tree_omitted(repo=REPO):
+    """Files that appear in no Appendix B table because the docs give no purpose for them."""
+    return [rel for g in TREE_GROUPS for rel in tree_files(g, repo) if not purpose_of(rel, repo)]
+
+
+def generate_block(name, repo=REPO):
+    """Markdown for one {{gen:NAME}} directive. Tables come from the functions of bench/make_report_tables.py
+    applied to the result folders of the repo, so no number in a report table is typed by hand."""
+    repo = Path(repo)
+    tables = load_bench_tables(repo)
+    results = repo / "bench" / "results"
+    after, before = results / BENCH_AFTER, results / BENCH_BEFORE
+    kind, _, arg = name.partition(":")
+
+    def rows(folder, fname):
+        path = folder / fname
+        if not path.exists():
+            raise BuildError("{{gen:%s}}: %s does not exist" % (name, path))
+        return tables.read_csv(str(path))
+
+    if name == "startup":
+        return tables.startup_table(rows(after, "startup_summary.csv"))
+    if name == "compare":
+        return tables.compare_table(rows(before, "startup_summary.csv"), rows(after, "startup_summary.csv"))
+    if name == "memory":
+        return tables.memory_table(rows(after, "memory.csv"))
+    if name == "incremental":
+        return tables.incremental_table(rows(after, "memory_incremental.csv"))
+    if name == "limits":
+        return tables.limits_table(rows(after, "limits.csv"))
+    if name == "limits-before":
+        return tables.limits_table(rows(before, "limits.csv"))
+    if name == "machine":
+        if not (after / "system.json").exists():
+            raise BuildError("{{gen:machine}}: %s/system.json does not exist" % after)
+        return tables.machine_lines(tables.load_system(str(after)))
+    if name == "probe":
+        path = results / PROBE_FILE
+        if not path.exists():
+            raise BuildError("{{gen:probe}}: %s does not exist" % path)
+        return "```\n" + path.read_text(encoding="utf-8").rstrip("\n") + "\n```"
+    if kind == "tree" and arg:
+        return tree_table(arg, repo)
+    raise BuildError("unknown directive {{gen:%s}}" % name)
+
+
+def expand_generated(text, repo=REPO):
+    """Replace every line `{{gen:NAME}}` outside code fences by its generated Markdown."""
+    out, fenced = [], False
+    for line in text.split("\n"):
+        if RE_FENCE.match(line):
+            fenced = not fenced
+        m = None if fenced else RE_GEN.match(line.strip())
+        out.append(generate_block(m.group(1), repo) if m else line)
+    return "\n".join(out)
+
+
+
+def preprocess_report_md(text):
+    """Replace figure lines and table caption lines by placeholder paragraphs.
+
+    Returns (new text, captions) where captions[i] = {'kind': 'fig'|'tab', 'name', 'caption', 'path'}.
+    `![Caption](figures/x.svg){#fig:name}` and `Table: Caption {#tab:name}` are the report's own syntax.
+    """
+    caps, out, fenced = [], [], False
+    for line in text.split("\n"):
+        if RE_FENCE.match(line):
+            fenced = not fenced
+        m = None if fenced else RE_FIG_LINE.match(line.strip())
+        t = None if (fenced or m) else RE_TAB_LINE.match(line.strip())
+        if m:
+            caps.append({"kind": "fig", "caption": m.group(1), "path": m.group(2), "name": m.group(3)})
+        elif t:
+            caps.append({"kind": "tab", "caption": t.group(1), "name": t.group(2), "path": None})
+        else:
+            out.append(line)
+            continue
+        out += ["", "@@CAP%d@@" % (len(caps) - 1), ""]
+    return "\n".join(out), caps
+
+
+def parse_report_file(name, text, base_dir):
+    """Blocks of one report file. Figure and caption placeholders become 'figure' blocks and a
+    'caption' that is attached to the table that follows it (BuildError if there is none)."""
+    text, caps = preprocess_report_md(text)
+    raw = parse_markdown(text, base_dir)
+    blocks, pending = [], None
+    for b in raw:
+        m = RE_SENTINEL.match(runs_text(b["runs"])) if b["t"] == "p" else None
+        if m:
+            cap = caps[int(m.group(1))]
+            if pending:
+                raise BuildError("%s: table caption {#tab:%s} is not followed by a table" % (name, pending["name"]))
+            if cap["kind"] == "fig":
+                blocks.append({"t": "figure", "name": cap["name"], "caption": cap["caption"], "path": cap["path"]})
+            else:
+                pending = cap
+            continue
+        if b["t"] == "h":
+            hm = RE_HEAD_NAME.search(b["text"])
+            if hm:
+                b["name"], b["text"] = hm.group(1), b["text"][:hm.start()]
+        if pending:
+            if b["t"] != "table":
+                raise BuildError("%s: table caption {#tab:%s} is not followed by a table" % (name, pending["name"]))
+            b["name"], b["caption"] = pending["name"], pending["caption"]
+            pending = None
+        blocks.append(b)
+    if pending:
+        raise BuildError("%s: table caption {#tab:%s} is not followed by a table" % (name, pending["name"]))
+    return blocks
+
+
+def number_report(chapters):
+    """Number headings (1, 1.1, 1.1.1) and captions (Figure 3.2, Table 3.1) in place.
+
+    A heading may end in `{#sec:name}` so that text can refer to it as {sec:name} ("Section 4.3").
+
+    `chapters` = [{'file', 'kind': 'abstract'|'chapter'|'appendix', 'blocks'}]. Chapters are numbered
+    1, 2, ...; appendices are lettered A, B, ... ("Appendix A", sections A.1, "Table A.1"). A caption
+    in the abstract is an error. Returns {'fig:name': (label, anchor), ...}.
+    """
+    labels, top, counters, count, appendices = {}, "", [], 0, 0
+    for ch in chapters:
+        figs = tabs = 0
+        for b in ch["blocks"]:
+            if b["t"] == "h":
+                if b["level"] > MAX_HEADING_LEVEL:
+                    raise BuildError("%s: heading deeper than %d levels: %r" % (ch["file"], MAX_HEADING_LEVEL, b["text"]))
+                if ch["kind"] == "abstract":
+                    b["num"], b["id"] = "", "sec-" + re.sub(r"\W+", "-", b["text"].lower()).strip("-")
+                    continue
+                lvl = b["level"]
+                if lvl == 1:
+                    if ch["kind"] == "appendix":
+                        appendices += 1
+                        top = chr(ord("A") + appendices - 1)
+                        b["num"] = "Appendix " + top
+                    else:
+                        count += 1
+                        top = str(count)
+                        b["num"] = top
+                    counters = []
+                    figs = tabs = 0
+                else:
+                    idx = lvl - 2                      # counters[k] counts the headings of level k + 2
+                    if not top or idx > len(counters):
+                        raise BuildError("%s: heading %r skips a level" % (ch["file"], b["text"]))
+                    del counters[idx + 1:]
+                    if idx == len(counters):
+                        counters.append(0)
+                    counters[idx] += 1
+                    b["num"] = ".".join([top] + [str(c) for c in counters[:idx + 1]])
+                b["id"] = "sec-" + b["num"].replace(".", "-").replace("Appendix ", "")
+                if b.get("name"):
+                    key = "sec:%s" % b["name"]
+                    if key in labels:
+                        raise BuildError("%s: duplicate name {#%s}" % (ch["file"], key))
+                    labels[key] = ("Section " + b["num"] if lvl > 1 or ch["kind"] != "appendix" else b["num"], b["id"])
+            elif b["t"] in ("figure", "table") and b.get("name"):
+                if ch["kind"] == "abstract" or not top:
+                    raise BuildError("%s: figures and tables are only allowed inside numbered chapters" % ch["file"])
+                if b["t"] == "figure":
+                    figs += 1
+                    kind, label = "fig", "Figure %s.%d" % (top, figs)
+                else:
+                    tabs += 1
+                    kind, label = "tab", "Table %s.%d" % (top, tabs)
+                key = "%s:%s" % (kind, b["name"])
+                if key in labels:
+                    raise BuildError("%s: duplicate name {#%s}" % (ch["file"], key))
+                b["label"], b["id"] = label, "%s-%s" % (kind, b["name"])
+                labels[key] = (label, b["id"])
+    return labels
+
+
+class Resolver:
+    """Turns inline runs into HTML and resolves {fig:}, {tab:} and [ref:] (collecting every problem)."""
+
+    def __init__(self, labels, refs):
+        self.labels, self.refs = labels, refs
+        self.cited = []                 # reference keys in order of first citation
+        self.used = set()               # figure/table keys that were referred to
+        self.errors = []
+
+    def cite_number(self, key):
+        if key not in self.refs:
+            self.errors.append("citation [ref:%s] has no entry in %s" % (key, REPORT_REFERENCES))
+            return None
+        if key not in self.cited:
+            self.cited.append(key)
+        return self.cited.index(key) + 1
+
+    def text(self, raw):
+        """HTML for one plain-text run with its cross-references and citations resolved."""
+        out, pos = [], 0
+        for m in re.finditer(r"\{(fig|tab|sec):([\w-]+)\}|\[ref:([\w-]+)\]", raw):
+            out.append(htmllib.escape(raw[pos:m.start()]))
+            pos = m.end()
+            if m.group(3):
+                n = self.cite_number(m.group(3))
+                out.append("[?]" if n is None else '<a class="cite" href="#ref-%s">[%d]</a>' % (m.group(3), n))
+            else:
+                key = "%s:%s" % (m.group(1), m.group(2))
+                if key not in self.labels:
+                    self.errors.append("unresolved reference {%s}" % key)
+                    out.append("{%s}" % key)
+                else:
+                    self.used.add(key)
+                    label, anchor = self.labels[key]
+                    out.append('<a class="xref" href="#%s">%s</a>' % (anchor, label))
+        out.append(htmllib.escape(raw[pos:]))
+        return "".join(out)
+
+    def runs(self, runs):
+        out = []
+        for text, fmt in runs:
+            h = '<code>%s</code>' % htmllib.escape(text) if fmt.get("code") else self.text(text)
+            if fmt.get("b"):
+                h = "<strong>%s</strong>" % h
+            if fmt.get("i"):
+                h = "<em>%s</em>" % h
+            out.append(h)
+        return "".join(out)
+
+
+def svg_width(path):
+    """Width (user units) of the viewBox of an SVG file, 0 if it has none (a raster image, say)."""
+    m = re.search(r'viewBox="\s*[-\d.]+[ ,]+[-\d.]+[ ,]+([\d.]+)', Path(path).read_text(encoding="utf-8", errors="ignore")[:2000]) \
+        if Path(path).suffix == ".svg" else None
+    return float(m.group(1)) if m else 0.0
+
+
+def blocks_html(blocks, res, rdir):
+    """HTML of a list of blocks (lists are grouped into <ul>/<ol>)."""
+    out, i = [], 0
+    while i < len(blocks):
+        b = blocks[i]
+        t = b["t"]
+        if t == "li":
+            j = i
+            while j < len(blocks) and blocks[j]["t"] == "li":
+                j += 1
+            group = blocks[i:j]
+            tag = "ol" if group[0]["ordered"] else "ul"
+            out.append("<%s>%s</%s>" % (tag, "".join('<li class="l%d">%s</li>' % (g["level"], res.runs(g["runs"]))
+                                                     for g in group), tag))
+            i = j
+            continue
+        i += 1
+        if t == "h":
+            tag = "h%d" % b["level"]
+            cls = ' class="chapter"' if b["level"] == 1 else ""
+            num = '<span class="num">%s</span> ' % b["num"] if b.get("num") else ""
+            out.append('<%s id="%s"%s>%s%s</%s>' % (tag, b["id"], cls, num, htmllib.escape(b["text"]), tag))
+        elif t == "p":
+            out.append("<p>%s</p>" % res.runs(b["runs"]))
+        elif t == "quote":
+            out.append("<blockquote>%s</blockquote>" % res.runs(b["runs"]))
+        elif t == "code":
+            wide = ' class="wide"' if max((len(l) for l in b["text"].split("\n")), default=0) > WIDE_CODE_CHARS else ""
+            out.append("<pre%s><code>%s</code></pre>" % (wide, htmllib.escape(b["text"].rstrip("\n"))))
+        elif t == "figure":
+            path = (Path(rdir) / b["path"]).resolve()
+            if not path.exists():
+                raise BuildError("figure file not found: %s (run scripts/make_report_diagrams.py)" % path)
+            wide = ' class="wide"' if svg_width(path) > WIDE_FIGURE_UNITS else ""
+            out.append('<figure id="%s"%s><img src="%s" alt="%s"><figcaption><strong>%s:</strong> %s</figcaption></figure>'
+                       % (b["id"], wide, htmllib.escape(b["path"]), htmllib.escape(b["caption"]), b["label"],
+                          res.runs(parse_inline(b["caption"]))))
+        elif t == "table":
+            rows = b["rows"]
+            head = "".join("<th>%s</th>" % res.runs(c) for c in rows[0])
+            body = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % res.runs(c) for c in r) for r in rows[1:])
+            cap = ""
+            if b.get("name"):
+                cap = '<p class="caption" id="%s"><strong>%s:</strong> %s</p>' % (
+                    b["id"], b["label"], res.runs(parse_inline(b["caption"])))
+            out.append('<div class="tablebox">%s<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>'
+                       % (cap, head, body))
+    return "\n".join(out)
+
+
+def toc_entries(chapters, kind=None):
+    """[(level, number, title, anchor)] for the contents page: every numbered heading of the files of
+    `kind` ('chapter' or 'appendix'; None = both). The References entry is added by the caller."""
+    out = []
+    for ch in chapters:
+        if ch["kind"] == "abstract" or (kind and ch["kind"] != kind):
+            continue
+        for b in ch["blocks"]:
+            if b["t"] == "h" and b["level"] <= MAX_HEADING_LEVEL:
+                out.append((b["level"], b.get("num", ""), b["text"], b["id"]))
+    return out
+
+
+def css_string(text):
+    """A CSS string literal for `text`."""
+    return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
+REPORT_CSS = """
+@page { size: A4; margin: 2.5cm;
+  @top-right { content: %(header)s; font: 9pt "Liberation Sans", sans-serif; color: #444; }
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font: 9pt "Liberation Sans", sans-serif; color: #444; } }
+@page wide { size: A4 landscape; }
+@page :first { @top-right { content: none; } @bottom-center { content: none; } }
+html { font: 11pt/1.27 "Liberation Serif", serif; color: #111; }
+body { margin: 0; text-align: justify; hyphens: auto; }
+h1, h2, h3, .toc-title, .abstract-title { font-family: "Liberation Sans", sans-serif; color: #000; text-align: left; hyphens: none; }
+h1 { font-size: 19pt; margin: 0 0 0.8em; break-after: avoid; }
+h1.chapter { margin-top: 1.8em; }
+.toc + section h1.chapter, .toc + section > h1.chapter:first-child { margin-top: 0; break-before: page; }
+h2 { font-size: 14pt; margin: 1.1em 0 0.35em; break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 1.1em 0 0.3em; break-after: avoid; }
+.num { display: inline-block; min-width: 1.9em; }
+p { margin: 0 0 0.5em; orphans: 3; widows: 3; }
+ul, ol { margin: 0 0 0.6em; padding-left: 1.5em; }
+li { margin-bottom: 0.12em; }
+li.l1 { margin-left: 1.2em; }
+code { font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; overflow-wrap: anywhere; }
+pre { font-family: "DejaVu Sans Mono", monospace; font-size: 8.2pt; line-height: 1.3; background: #f2f2f2;
+  border-left: 2.5pt solid #888; padding: 5pt 7pt; margin: 0.5em 0 0.8em; white-space: pre-wrap;
+  overflow-wrap: anywhere; text-align: left; hyphens: none; break-inside: avoid; }
+pre code { font-size: inherit; }
+pre.wide { font-size: 7.4pt; }
+a { color: inherit; text-decoration: none; }
+figure { margin: 0.6em 0; text-align: center; break-inside: avoid; }
+figure img { width: 100%%; max-height: 20.5cm; object-fit: contain; }
+figure.wide { page: wide; break-after: page; }
+figure.wide img { max-height: 13.2cm; }
+figcaption, p.caption { font: 9.5pt/1.3 "Liberation Sans", sans-serif; text-align: left; hyphens: none; }
+figcaption { margin-top: 0.4em; }
+p.caption { margin: 0 0 0.3em; break-after: avoid; }
+.tablebox { margin: 0.7em 0 0.9em; break-inside: avoid; }
+table { border-collapse: collapse; width: 100%%; font: 9pt/1.3 "Liberation Sans", sans-serif; text-align: left; hyphens: none; }
+th, td { border: 0.5pt solid #777; padding: 2.5pt 4.5pt; vertical-align: top; overflow-wrap: break-word; }
+th { background: #e2e2e2; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+td code, th code { font-size: 8.3pt; overflow-wrap: break-word; }   /* a file name keeps its width in a table column */
+.title-page { break-after: page; text-align: center; padding-top: 5cm; }
+.title-page h1 { font-size: 26pt; text-align: center; margin-bottom: 0.3em; }
+.title-page .subtitle { font: 16pt "Liberation Sans", sans-serif; margin-bottom: 3cm; }
+.title-page .field { font: 12pt/1.9 "Liberation Sans", sans-serif; }
+.ph { background: #ffff00; }
+.abstract { break-before: page; }
+section.appendix { break-before: page; }
+.abstract-title, .toc-title { font-size: 19pt; font-weight: bold; margin: 0 0 0.8em; }
+.toc { break-before: page; }
+.toc ul { list-style: none; padding: 0; margin: 0; text-align: left; }
+.toc li { margin: 0 0 0.25em; }
+.toc li.t1 { margin-top: 0.7em; font: bold 11pt "Liberation Sans", sans-serif; }
+.toc li.t2 { margin-left: 1.2em; }
+.toc li.t3 { margin-left: 2.4em; font-size: 10.5pt; }
+.toc li.t3 .num { min-width: 2.5em; }
+.toc a::after { content: leader('.') " " target-counter(attr(href), page); font-weight: normal; }
+.refs { list-style: none; padding: 0; }
+.refs li { margin-bottom: 0.45em; padding-left: 2.2em; text-indent: -2.2em; text-align: left; }
+.refs .n { display: inline-block; width: 2.2em; text-indent: 0; }
+"""
+
+
+def title_page_html(shown):
+    rows = [("Student", "student_name"), ("Register number", "register_no"), ("Course", "course"),
+            ("Faculty", "faculty_name"), ("Institute", "institute"), ("Team number", "team_number"),
+            ("Date", "date")]
+    fields = []
+    for label, key in rows:
+        v = shown[key]
+        val = '<span class="ph">%s</span>' % htmllib.escape(v) if v == PLACEHOLDERS[key] else htmllib.escape(v)
+        fields.append('<div class="field"><strong>%s:</strong> %s</div>' % (label, val))
+    return ('<section class="title-page"><h1>%s</h1><div class="subtitle">Project Report</div>%s</section>'
+            % (htmllib.escape(shown["project_title"]), "".join(fields)))
+
+
+def load_report_sources(rdir, repo=REPO):
+    """Read the abstract, the chapters, the appendices and references.md from `rdir`: (chapters, references).
+    `{{gen:NAME}}` lines are expanded from the repo's result files first."""
+    rdir = Path(rdir)
+    chapters = []
+    files = ([(REPORT_ABSTRACT, "abstract")] + [(c, "chapter") for c in REPORT_CHAPTERS]
+             + [(a, "appendix") for a in REPORT_APPENDICES])
+    for name, kind in files:
+        p = rdir / name
+        if not p.exists():
+            raise BuildError("report source is missing: %s" % p)
+        text = expand_generated(p.read_text(encoding="utf-8"), repo)
+        chapters.append({"file": name, "kind": kind, "text": text, "blocks": parse_report_file(name, text, rdir)})
+    rp = rdir / REPORT_REFERENCES
+    if not rp.exists():
+        raise BuildError("report source is missing: %s" % rp)
+    return chapters, parse_references(rp.read_text(encoding="utf-8"))
+
+
+def check_report_text(chapters):
+    """Problems in the source text: placeholders, a wrong abstract length, a wrong abstract structure."""
+    problems = []
+    for ch in chapters:
+        for n, line in enumerate(ch["text"].splitlines(), 1):
+            if RE_PLACEHOLDER.search(line):
+                problems.append("%s line %d: leftover placeholder: %r" % (ch["file"], n, line.strip()[:80]))
+    ab = [c for c in chapters if c["kind"] == "abstract"][0]
+    words = count_words(" ".join(runs_text(b["runs"]) for b in ab["blocks"] if b["t"] == "p"))
+    lo, hi = ABSTRACT_WORDS
+    if not lo <= words <= hi:
+        problems.append("abstract has %d words (must be %d to %d)" % (words, lo, hi))
+    return problems
+
+
+def check_page_count(pages, bounds=REPORT_PAGES):
+    lo, hi = bounds
+    if not lo <= pages <= hi:
+        return ["page count %d is outside %d to %d" % (pages, lo, hi)]
+    return []
+
+
+def build_report_html(rdir, shown, repo=REPO):
+    """Assemble the whole report as HTML. Returns a dict: html, problems (BuildError text), warnings, stats."""
+    chapters, refs = load_report_sources(rdir, repo)
+    problems = check_report_text(chapters)
+    numbered = [c for c in chapters if c["kind"] != "abstract"]
+    labels = number_report(chapters)
+    res = Resolver(labels, refs)
+    body, appendix_body = [], []
+    for ch in chapters:
+        if ch["kind"] == "appendix":
+            appendix_body.append('<section class="appendix">%s</section>' % blocks_html(ch["blocks"], res, rdir))
+        elif ch["kind"] == "abstract":
+            inner = "".join("<p>%s</p>" % res.runs(b["runs"]) for b in ch["blocks"] if b["t"] == "p")
+            body.append('<section class="abstract"><div class="abstract-title">Abstract</div>%s</section>' % inner)
+        else:
+            body.append("<section>%s</section>" % blocks_html(ch["blocks"], res, rdir))
+    ref_items = "".join('<li id="ref-%s"><span class="n">[%d]</span>%s</li>'
+                        % (k, i, res.runs(parse_inline(refs[k]))) for i, k in enumerate(res.cited, 1))
+    body.append('<section><h1 class="chapter" id="sec-references">References</h1><ol class="refs">%s</ol></section>'
+                % ref_items)
+    body += appendix_body                  # order of the document: chapters, References, appendices
+    toc_src = toc_entries(chapters, "chapter") + [(1, "", "References", "sec-references")]
+    toc_src += toc_entries(chapters, "appendix")
+    toc = "".join('<li class="t%d"><a href="#%s">%s%s</a></li>' % (
+        lvl, anchor, ('<span class="num">%s</span> ' % num) if num else "", htmllib.escape(title))
+        for lvl, num, title, anchor in toc_src)
+    problems += res.errors
+    unused_refs = [k for k in refs if k not in res.cited]
+    unused_labels = [k for k in labels if not k.startswith("sec:") and k not in res.used]
+    html = ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>%s</title>'
+            '<meta name="author" content="%s"><style>%s</style></head><body>%s'
+            '<section class="toc"><div class="toc-title">Contents</div><ul>%s</ul></section>%s</body></html>'
+            % (htmllib.escape(shown["project_title"]), htmllib.escape(shown["student_name"]),
+               REPORT_CSS % {"header": css_string(shown["project_title"][:REPORT_SHORT_TITLE_MAX])},
+               title_page_html(shown) + body[0], toc, "".join(body[1:])))
+    stats = {"figures": [(l, k) for k, (l, _) in labels.items() if k.startswith("fig:")],
+             "tables": [(l, k) for k, (l, _) in labels.items() if k.startswith("tab:")],
+             "cited": list(res.cited), "chapters": len([c for c in numbered if c["kind"] == "chapter"]),
+             "appendices": len([c for c in numbered if c["kind"] == "appendix"]),
+             "toc": [(n, t) for _, n, t, _ in toc_src]}
+    warnings = []
+    if unused_refs:
+        warnings.append("reference entries never cited: %s" % ", ".join(unused_refs))
+    if unused_labels:
+        warnings.append("figures/tables never referred to in the text: %s" % ", ".join(unused_labels))
+    return {"html": html, "problems": problems, "warnings": warnings, "stats": stats, "chapters": chapters}
+
+
+def pdf_pages_text(pdf_path):
+    """Text of every page of a PDF (pypdfium2)."""
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        return [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+    finally:
+        doc.close()
+
+
+def render_pdf_pages(pdf_path, png_dir, scale=1.3):
+    """Render every page of the PDF to PNG files page-NN.png in png_dir; returns their paths."""
+    png_dir = assert_outside_repo(png_dir)
+    import pypdfium2 as pdfium
+    png_dir.mkdir(parents=True, exist_ok=True)
+    for old in png_dir.glob("page-*.png"):
+        old.unlink()
+    doc = pdfium.PdfDocument(str(pdf_path))
+    paths = []
+    try:
+        for i in range(len(doc)):
+            target = assert_outside_repo(png_dir / ("page-%02d.png" % (i + 1)))
+            doc[i].render(scale=scale).to_pil().save(str(target))
+            paths.append(target)
+    finally:
+        doc.close()
+    return paths
+
+
+def verify_report_pdf(pages_text, chapters):
+    """Problems found in the text of the finished PDF."""
+    problems = check_page_count(len(pages_text))
+    for n, t in enumerate(pages_text, 1):
+        for m in RE_UNRESOLVED.finditer(t):
+            problems.append("page %d: unresolved marker %r" % (n, t[m.start():m.start() + 20]))
+        for m in RE_PLACEHOLDER.finditer(t):
+            problems.append("page %d: placeholder %r" % (n, m.group(0)))
+    if len(pages_text) > 1:
+        if re.search(r"Page \d+ of \d+", pages_text[0]):
+            problems.append("the title page has a page number")
+        want = "Page 2 of %d" % len(pages_text)
+        if want not in re.sub(r"\s+", " ", pages_text[1]):
+            problems.append("footer %r not found on page 2" % want)
+    flat = re.sub(r"\s+", " ", " ".join(pages_text))
+    for ch in chapters:
+        for b in ch["blocks"]:
+            if b["t"] == "h" and re.sub(r"\s+", " ", b["text"]) not in flat:
+                problems.append("heading missing from the PDF text: %r" % b["text"])
+    return problems
+
+
+def report_pdf_write(html, rdir, target):
+    """Render `html` to `target` with WeasyPrint; returns the warnings WeasyPrint logged."""
+    target = assert_outside_repo(target)
+    from weasyprint import HTML
+    records = []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = Grab(level=logging.WARNING)
+    log = logging.getLogger("weasyprint")
+    log.addHandler(handler)
+    try:
+        HTML(string=html, base_url=str(Path(rdir).resolve()) + "/").write_pdf(str(target))
+    finally:
+        log.removeHandler(handler)
+    return records
+
+
+def cmd_report(args):
+    out = assert_outside_repo(args.out)
+    if not importlib.util.find_spec("weasyprint") or not importlib.util.find_spec("pypdfium2"):
+        modules = probe_modules(out)
+        vpy = venv_python(out)
+        if modules.get("weasyprint") == "venv" and modules.get("pypdfium2") == "venv" and vpy.exists():
+            os.execv(str(vpy), [str(vpy), str(Path(__file__).resolve())] + sys.argv[1:])
+        raise BuildError("weasyprint and pypdfium2 are missing. Run:\n  %s/venv/bin/pip install %s"
+                         % (out, " ".join(PIP_PDF)))
+    for f in REPORT_FONTS:
+        if font_available(f) is False:
+            raise BuildError("font %r is not installed (check with: fc-list | grep -i '%s')" % (f, f))
+    cfg = load_config(out)
+    shown, empty = config_values(cfg)
+    if empty:
+        print("WARNING: empty config values shown as placeholders on the title page: %s" % ", ".join(empty))
+        print("         edit %s and rebuild" % (out / "config.json"))
+    rdir = out / "report"
+    built = build_report_html(rdir, shown)
+    build_dir = assert_outside_repo(out / "build")
+    build_dir.mkdir(parents=True, exist_ok=True)
+    assert_outside_repo(build_dir / "report.html").write_text(built["html"], encoding="utf-8")
+    if built["problems"]:
+        raise BuildError("report sources FAILED (%d problems):\n  - %s" % (len(built["problems"]),
+                                                                       "\n  - ".join(built["problems"][:40])))
+    target = assert_outside_repo(out / REPORT_PDF)
+    logged = report_pdf_write(built["html"], rdir, target)
+    bad = [m for m in logged if "ailed to load" in m or "issing" in m]
+    pages_text = pdf_pages_text(target)
+    problems = verify_report_pdf(pages_text, built["chapters"]) + bad
+    if problems:
+        raise BuildError("PDF verification FAILED (%d problems):\n  - %s" % (len(problems), "\n  - ".join(problems[:40])))
+    pngs = render_pdf_pages(target, build_dir / "report_pages")
+    st = built["stats"]
+    print("built %s (%d KB, %d pages)" % (target, target.stat().st_size // 1024, len(pages_text)))
+    print("  chapters %d; appendices %d; figures %d; tables %d; references cited %d"
+          % (st["chapters"], st["appendices"], len(st["figures"]), len(st["tables"]), len(st["cited"])))
+    for ch in built["chapters"]:
+        words = count_words(" ".join(t for t in (runs_text(b["runs"]) for b in ch["blocks"] if b["t"] in ("p", "li"))))
+        print("    %-20s %5d words" % (ch["file"], words))
+    print("  figures: " + ", ".join("%s (%s)" % (l, k[4:]) for l, k in st["figures"]))
+    print("  tables: " + ", ".join("%s (%s)" % (l, k[4:]) for l, k in st["tables"]))
+    print("  references cited: " + ", ".join(st["cited"]))
+    omitted = tree_omitted()
+    if omitted:
+        print("  Appendix B omits files with no purpose in the docs: %s" % ", ".join(omitted))
+    print("  verification: OK (no placeholders or {{gen:}} markers, all cross-references and citations resolved, figures present,")
+    print("                abstract length, page count %d to %d, footer and fonts)" % REPORT_PAGES)
+    for m in sorted(set(logged)):
+        if "fontTools instead of HarfBuzz" not in m:     # harmless notice about font subsetting
+            print("  weasyprint: %s" % m)
+    for w in built["warnings"]:
+        print("  WARNING: %s" % w)
+    print("  page images: %s (%d files)" % (build_dir / "report_pages", len(pngs)))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="output folder (default ~/minibox-deliverables; never inside the repo)")
@@ -1365,10 +2104,12 @@ def main(argv=None):
     sub.add_parser("check-tools")
     sub.add_parser("coverage")
     sub.add_parser("docs")
+    sub.add_parser("report")
     args = ap.parse_args(argv)
     try:
         assert_outside_repo(args.out)
-        return {"check-tools": cmd_check_tools, "coverage": cmd_coverage, "docs": cmd_docs}[args.cmd](args)
+        return {"check-tools": cmd_check_tools, "coverage": cmd_coverage, "docs": cmd_docs,
+                "report": cmd_report}[args.cmd](args)
     except RepoWriteError as e:
         print("error: %s" % e, file=sys.stderr)
         return 2

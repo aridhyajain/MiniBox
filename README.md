@@ -213,7 +213,9 @@ The final Word documentation is built outside the repository, into `~/minibox-de
 make deliverables-check   # which tools exist, which route is chosen, exact install commands for what is missing
 python3 scripts/build_deliverables.py coverage   # every docs/**/*.md: included, excluded or missing
 make deliverables-docs    # builds ~/minibox-deliverables/MiniBox_Documentation.docx and verifies it
+make deliverables-report  # writes the report diagrams and builds ~/minibox-deliverables/MiniBox_Report.pdf (the whole project report) and verifies it
 ```
+The report text is Markdown in `~/minibox-deliverables/report/` (`00_abstract.md` to `10_conclusion.md`, three appendix files, `references.md`; result tables and the file lists are generated from the repo, not typed), outside the repo, so it can be edited freely.
 Fill in the student details in `~/minibox-deliverables/config.json` (created on first run; empty values show as `[PLACEHOLDERS]` on the title page). `docs/VIVA_NOTES.md`, `docs/DEVLOG.md` and the docs of this tooling are never included. Details: `docs/scripts/build_deliverables.md`.
 
 ## Documentation

@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c src/minit.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick probe-attach charts deliverables-check deliverables-docs ui-setup ui-run demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-init test-clone3 test-bench bench bench-quick probe-attach charts deliverables-check deliverables-docs deliverables-report ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -114,6 +114,11 @@ deliverables-check:
 
 deliverables-docs:
 	python3 scripts/build_deliverables.py docs
+
+# The whole report as PDF: diagrams first, then the PDF (~/minibox-deliverables/MiniBox_Report.pdf).
+deliverables-report:
+	python3 scripts/make_report_diagrams.py
+	python3 scripts/build_deliverables.py report
 
 clean:
 	rm -rf $(BUILD) $(TARGET)
