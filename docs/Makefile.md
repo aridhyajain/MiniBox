@@ -5,7 +5,7 @@ Single entry point for building, setup and test instructions.
 
 ## Variables
 `CC=gcc`, `CFLAGS=-std=c11 -Wall -Wextra -Werror -g -Iinclude -MMD -MP`, `BUILD=build`,
-`TARGET=minibox`, `SRCS=src/main.c src/container.c src/rootfs.c src/net.c`, `OBJS` = `build/*.o`.
+`TARGET=minibox`, `SRCS=src/main.c src/container.c src/rootfs.c src/net.c src/cgroup.c`, `OBJS` = `build/*.o`.
 `-MMD -MP` write `build/*.d` files so objects rebuild when a header changes (`-include` at the bottom).
 
 ## Targets
@@ -16,7 +16,8 @@ Single entry point for building, setup and test instructions.
 | `build/%.o` | compiles one source file | creates `build/` |
 | `check-env` | runs `scripts/check_env.sh` | non-zero exit if a check fails |
 | `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
-| `test` | builds, then prints `sudo tests/phase1_test.sh` and `sudo tests/phase2_test.sh` | never runs sudo itself |
+| `test` | builds, then prints the sudo commands for all three test scripts | never runs sudo itself |
+| `test-phase3` | builds, then prints `sudo tests/phase3_test.sh` | never runs sudo itself |
 | `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
 All non-file targets are `.PHONY`.
@@ -32,6 +33,7 @@ Process creation by a build tool; dependency-driven incremental builds.
 make            # compiles with no warnings, creates ./minibox
 make            # second run: "Nothing to be done"
 touch include/rootfs.h && make   # rebuilds container.o and rootfs.o
-make test       # prints the sudo command
+make test       # prints the sudo commands
+make test-phase3
 make clean
 ```

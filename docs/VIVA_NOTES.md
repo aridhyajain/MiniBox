@@ -83,3 +83,72 @@ for mounts and veth setup, so it is a separate, later step. For now the containe
 
 ### Limitations to mention
 Fixed 10.0.0.0/24 subnet (one veth container at a time), no NAT so no internet access from the container.
+
+## Phase 3
+
+### What are cgroups, and how do they differ from namespaces?
+A **control group** is a set of processes whose resource use the kernel counts and limits.
+- **Namespaces limit what a process can _see_** (its own PIDs, hostname, mounts, network).
+- **cgroups limit what a process can _use_** (how much memory, how much CPU time, how many processes).
+
+A container needs both. Without cgroups, a process that can see only its own world can still use all the
+host's memory or CPU.
+
+### cgroup v1 vs v2
+- **v1** has a separate tree per resource (`/sys/fs/cgroup/memory/...`, `/sys/fs/cgroup/cpu/...`). A process could be
+  in different places in each tree, which made it messy.
+- **v2** (used here) has **one unified tree** at `/sys/fs/cgroup`. Every directory is a cgroup, every file is a
+  setting or statistic, and a process is in exactly one cgroup. minibox only uses `mkdir`, `rmdir`, `read` and
+  `write` on these files.
+
+### What is a controller?
+A controller is the kernel part that enforces one kind of resource: `memory`, `cpu`, `pids` (others include `io`
+and `cpuset`). The root's `cgroup.controllers` lists what exists. A cgroup can only use a controller its
+**parent** enabled in `cgroup.subtree_control`. So minibox enables `+memory +cpu +pids` on the root, then on
+`minibox/`, and the `box-<pid>` leaves get the `memory.*`, `cpu.*` and `pids.*` files.
+
+### How the three limits work
+- **`memory.max`**: a hard limit in bytes on the memory the group may use. When the group hits it, the kernel
+  first tries to reclaim memory (and could swap, so we set **`memory.swap.max = 0`**). If that is not enough, the
+  **OOM killer** kills a process in the group.
+- **`cpu.max = "<quota> <period>"`**: in every period (100000 µs = 0.1 s) the group may run for at most *quota* µs
+  of CPU time, then it is throttled until the next period. `--cpus 0.5` → `50000 100000` = half of one core.
+  `--cpus 2` → `200000 100000` = up to two cores' worth.
+- **`pids.max`**: the maximum number of processes (and threads) in the group. When it is reached, `fork()`/`clone()`
+  fail with `EAGAIN` ("can't fork").
+
+### Why does pids.max contain a fork bomb?
+A fork bomb works by creating processes until the system's process table is full, which freezes everything.
+With `pids.max = 20`, the 21st `fork()` inside the container simply fails, so the bomb stops at 20 processes. The
+host and other containers do not notice. You can see this in `pids.peak` with `--stats`.
+
+### What does the OOM killer do?
+When memory cannot be freed, the kernel's **Out-Of-Memory killer** picks a process and kills it with `SIGKILL` to
+free memory. With a cgroup limit this happens **inside that cgroup only**, so the host is protected. We set
+**`memory.oom.group = 1`**, so the whole container is killed together instead of leaving it half-alive. minibox
+reads `oom_kill` from `memory.events`, prints "container was OOM-killed" and exits with 137 (= 128 + 9, SIGKILL).
+
+### Why the "no internal processes" rule?
+In v2, a non-root cgroup that hands out controllers to its children (`subtree_control`) may not contain processes
+itself. Otherwise the kernel would have to divide resources between "the processes directly here" and "the child
+groups", which is ambiguous. So resources are only distributed among children, and processes live in the leaves.
+That is why `minibox/` stays empty and every container gets its own leaf `minibox/box-<pid>`.
+(`minibox/` itself is kept between runs. Removing it could race with another container that is just starting.)
+
+### When is the container put in the cgroup?
+After `clone()` the parent writes the child's PID into `box-<pid>/cgroup.procs` **while the child is blocked on the
+sync pipe**. Only then does it send `G`. So the limits are in force before the user's program starts. Everything it
+forks later is in the same cgroup automatically.
+
+### Cleanup on Ctrl-C / SIGTERM
+minibox installs handlers for SIGINT and SIGTERM. The handler records the signal and sends `SIGKILL` to the
+container's PID 1 (killing a PID namespace's init kills every process in it). Then the normal path runs: reap,
+stats, `rmdir` of the leaf. A cgroup can only be removed when it is empty, and dying processes take a moment, so
+`rmdir` is retried for up to a second. The handler only touches two `volatile sig_atomic_t` globals and calls
+`kill()`, which is async-signal-safe. These are the only globals in the program.
+
+### Gotcha: PID 1 ignores signals it has no handler for
+Inside a PID namespace, the init process (PID 1) only receives signals from inside the namespace if it installed
+a handler (SIGKILL from the parent namespace always works). So `minibox run -- timeout 3 sh -c 'busy loop'` never
+stops: busybox `timeout` execs the loop as PID 1, and its SIGTERM is dropped. The fix is to run it under a shell:
+`sh -c 'timeout 3 ...; true'`. A real container runtime solves this with a tiny init process (like `tini`).

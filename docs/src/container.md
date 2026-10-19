@@ -1,59 +1,82 @@
 # src/container.c
 
 ## Purpose
-Creates the container process with `clone()` in new PID, UTS, mount, IPC and network
-namespaces, synchronises with the child through two pipes (so the parent can finish network
-setup before the program starts), and waits for the child.
+Creates the container process with `clone()` in new PID, UTS, mount, IPC and network namespaces,
+places it in its own cgroup when limits are given, synchronises with the child through two pipes
+(so all host-side setup finishes before the program starts), waits for it, and cleans up
+(veth, cgroup) on every path — including setup failures and SIGINT/SIGTERM.
 
-## Parent/child handshake
+## Parent/child handshake (identical in every mode)
 ```
-parent                                   child (PID 1 in new namespaces)
-clone() ------------------------------>  sethostname, bring lo up, rootfs_setup
-  wait on ready pipe (ALL modes) <----   write 'R'
-  (--net veth only) net_veth_setup(pid): read go pipe  (blocks)
-    create pair, move peer into child's netns
-  write 'G' (or 'A' on failure) ------>  'G': set eth0 10.0.0.2/24 (veth), chdir, execvp
-waitpid; net_veth_cleanup(pid)           'A' or EOF: exit 1
+parent                                      child (PID 1 in new namespaces)
+cgroup_check_v2()  (only if limits given; before clone)
+install SIGINT/SIGTERM handlers
+clone() --------------------------------->  sethostname, bring lo up, rootfs_setup
+  wait on ready pipe  <-------------------  write 'R'
+  cgroup_setup(pid): leaf + limits +        read go pipe  (blocks)
+    write pid to cgroup.procs
+  (--net veth) net_veth_setup(pid)
+  write 'G' (or 'A' + SIGKILL on failure) ->  'G': (veth) eth0 10.0.0.2/24, chdir, execvp
+waitpid                                      'A' or EOF: exit 1
+net_veth_cleanup(pid)  (veth mode)
+--stats: print usage; oom_kill > 0 -> message, exit 137
+cgroup_remove()  (rmdir leaf, retry up to 1 s)
+restore signal handlers
 ```
-The protocol is identical in every network mode: the parent always reads `'R'` first, then (veth only) sets up
-the network, then always sends one `'G'`/`'A'` byte. (Earlier bug: in `--net none` the parent never read `ready` and
-closed it, so the child's write of `'R'` failed with EPIPE and the container died before running the command.)
-Pipes are `pipe2(O_CLOEXEC)` so they close on `exec`. EOF on the `ready` pipe means the child died
-before reaching the handshake; the parent then still reaps it and prints
-"container died during setup (exit status N)", and deletes any veth. The parent keeps the `go` read end
-open until after its write so the write can never raise `SIGPIPE`.
+- The pid is written to `cgroup.procs` **before** `'G'`, so the limits apply from the program's first instruction.
+  The child forks nothing before exec (the `ip` commands run in the parent), so moving that one PID is enough.
+- EOF on the `ready` pipe means the child died early: the parent reaps it and prints
+  "container died during setup (exit status N)". Pipes are `O_CLOEXEC`. The parent keeps the `go` read end open
+  until after its write, so that write can never raise `SIGPIPE`.
+
+## Signals (the only global state)
+`static volatile sig_atomic_t stop_signal, target_pid` — a signal handler receives no arguments, so globals are
+the only way it can communicate. The handler (installed with `sigaction`, **no** `SA_RESTART`) records the signal and,
+once `target_pid` is set right after `clone`, calls `kill(target_pid, SIGKILL)` (async-signal-safe). Killing PID 1
+of a PID namespace kills every process in it. Blocking `read`/`waitpid` then return `EINTR`; `read_byte` stops
+retrying, setup is treated as failed, and normal cleanup runs. `target_pid` is cleared right after `waitpid` reaps the
+child so a later signal can never hit a recycled PID. Handlers are restored at the end; `exec` resets them in the child.
+A signal arriving before `target_pid` is set is caught by the `stop_signal` check at the end of `parent_setup`.
 
 ## Functions
 | Function | Inputs | Returns | Errors / side effects |
 |----------|--------|---------|-----------------------|
-| `static void *alloc_stack(void **top)` | out-pointer | mapping base or NULL | `mmap` 1 MiB (`MAP_STACK`); `perror` |
-| `make_sync_pipes(p)`, `close_pipes(p)`, `close_fd(fd*)` | pipe struct | 0 / -1 | `pipe2(O_CLOEXEC)` x2; `perror` |
-| `read_byte(fd, &c)`, `write_byte(fd, c)` | – | 1/0/-1, 0/-1 | retry on `EINTR`; `perror` |
+| `alloc_stack(void **top)` | out-pointer | mapping base or NULL | `mmap` 1 MiB (`MAP_STACK`); `perror` |
+| `make_sync_pipes`, `close_pipes`, `close_fd` | pipe struct / fd | 0 / -1 | `pipe2(O_CLOEXEC)` x2 |
+| `read_byte(fd, &c)` | – | 1 / 0 (EOF) / -1 | retries `EINTR` unless `stop_signal` is set |
+| `write_byte(fd, c)` | – | 0 / -1 | retries `EINTR`; `perror` |
+| `on_stop_signal(sig)` | signal | – | sets `stop_signal`; `kill(target_pid, SIGKILL)`; preserves `errno` |
+| `install_stop_handlers(old)`, `restore_handlers(old)` | saved actions | 0 / -1, – | `sigaction` for SIGINT and SIGTERM |
 | `set_hostname(name)` | hostname | 0 / -1 | `sethostname` in the UTS ns |
-| `child_handshake(p)` | pipes | 0 / -1 | writes `'R'`, blocks for `'G'`; prints "aborted by parent" on `'A'`/EOF |
-| `child_setup(args)` | `struct child_args` | 0 / -1 | closes parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `net_set_ipv4("eth0","10.0.0.2",24)` → `chdir("/")` → PATH/HOME |
-| `child_main(void *arg)` | args | exit code | 1 on setup failure, 127 if `execvp` fails, never returns on success |
-| `parent_wait_ready(fd)` | fd | 0 / -1 | called in every mode; -1 on EOF (child died early) |
-| `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth mode only: `net_veth_setup(pid)`; 0 for `--net none` |
-| `release_child(p, ok)` | – | 0 if sent `'G'` | writes `'G'` or `'A'` |
-| `wait_for_child(pid)` | pid | exit code, 128+sig, or -1 | `waitpid` with `EINTR` retry |
-| `int container_run(const struct container_config *cfg)` | config | child's exit status; -1 if creation or network setup failed | pipes, stack, `clone`, handshake, wait, `net_veth_cleanup` (always in veth mode, even after failure), `munmap` |
+| `child_handshake(p)` | pipes | 0 / -1 | writes `'R'`, blocks for `'G'`; "aborted by parent" on `'A'`/EOF |
+| `child_setup(args)` | `struct child_args` | 0 / -1 | close parent's pipe ends → hostname → `net_loopback_up` → `rootfs_setup` → handshake → (veth) `net_set_ipv4` → `chdir("/")` → PATH/HOME |
+| `child_main(arg)` | args | exit code | 1 on setup failure, 127 if `execvp` fails |
+| `parent_wait_ready(fd)` | fd | 0 / -1 | -1 on EOF (child died) or on a stop signal |
+| `parent_network_setup(cfg, pid)` | – | 0 / -1 | veth only: `net_veth_setup(pid)` |
+| `parent_setup(cfg, pid, p, cg, &child_died)` | – | 0 / -1 | wait `'R'` → `cgroup_setup` (if limits; prints "cgroup setup failed; container stopped") → network → fails if a stop signal arrived |
+| `release_child(p, ok)` | – | 0 if `'G'` sent | writes `'G'` or `'A'` |
+| `kill_child(pid)` | pid | – | `kill(SIGKILL)`, `ESRCH` ignored |
+| `wait_for_child(pid)` | pid | exit code, 128+sig, or -1 | `waitpid`, retries `EINTR` |
+| `report_early_exit(child_died, result)` | – | – | prints why the container ended early (died in setup / received SIGINT/SIGTERM) |
+| `finish_cgroup(cfg, cg, result)` | – | final exit code | if leaf exists: `--stats` output, OOM check (message + 137), `cgroup_remove` |
+| `supervise(cfg, pid, pipes)` | – | exit code or -1 | parent side after `clone`: setup, release, wait, veth + cgroup cleanup |
+| `int container_run(const struct container_config *cfg)` | config | command's exit status (137 if OOM-killed), -1 if creation/cgroup/network setup failed | cgroup check, pipes, stack, handlers, `clone`, `supervise`, restore, `munmap` |
 
 ## System calls used and why
 - `mmap`/`munmap` – child stack for `clone`.
-- `clone(CLONE_NEWPID|CLONE_NEWUTS|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWNET|SIGCHLD)` – fork with five new namespaces (no user namespace in this phase).
-- `pipe2(O_CLOEXEC)`, `read`, `write`, `close` – the parent/child handshake.
-- `sethostname`, `chdir`, `setenv`, `execvp` – as in Phase 1.
-- `waitpid` – collect exit status.
+- `clone(CLONE_NEWPID|CLONE_NEWUTS|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWNET|SIGCHLD)` – fork with five new namespaces.
+- `pipe2(O_CLOEXEC)`, `read`, `write`, `close` – the handshake.
+- `sigaction`, `kill` – stop the container on SIGINT/SIGTERM; kill it if setup fails.
+- `sethostname`, `chdir`, `setenv`, `execvp`, `waitpid` – as in earlier phases.
+- cgroup file I/O is in `src/cgroup.c`.
 
 ## OS concept
-Namespaces; process synchronisation with pipes (a pipe also signals the death of the other side via EOF).
-`CLONE_NEWIPC` isolates SysV IPC (message queues, shared memory, semaphores) and POSIX message queues;
-`CLONE_NEWNET` gives the container its own interfaces, routes and ports.
+Namespaces (what a process sees), cgroups (what it can use), process synchronisation with pipes, and
+signal handling (async-signal-safe handlers, `EINTR`, PID-namespace init semantics).
 
 ## How to test
 ```sh
-sudo tests/phase1_test.sh && sudo tests/phase2_test.sh
-sudo ./minibox run --rootfs rootfs -- ip link                  # only lo
-sudo ./minibox run --rootfs rootfs --net veth -- nosuchcmd; echo $?   # 127, no vethh* left
+sudo tests/phase1_test.sh && sudo tests/phase2_test.sh && sudo tests/phase3_test.sh
+sudo ./minibox run --rootfs rootfs --pids 32 -- sleep 100   # then Ctrl-C: container killed, cgroup removed
+ls /sys/fs/cgroup/minibox                                     # no box-* left
 ```

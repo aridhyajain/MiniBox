@@ -33,3 +33,22 @@
 - Fix in `src/container.c`: the parent now always reads `'R'`, then does network setup (veth only), then always sends one `'G'`/`'A'`. If the child died early the parent reaps it, prints "container died during setup (exit status N)", and always runs `net_veth_cleanup` in veth mode.
 - Updated `docs/src/container.md` and the Phase 2 sync-pipe text in `docs/VIVA_NOTES.md`. `tests/phase2_test.sh` unchanged (its checks were correct).
 - `make` is warning-free; not yet re-run as root.
+
+## 2026-10-19 – Phase 3: cgroups v2 resource limits
+- New `src/cgroup.c` + `include/cgroup.h`:
+  - Checks for cgroup v2 using the `statfs` magic number and `cgroup.controllers`.
+  - Enables controllers top-down: root, then `minibox/`.
+  - Creates the leaf `box-<pid>` and writes `memory.max`, `memory.swap.max=0`, `memory.oom.group=1`, `cpu.max` and `pids.max`, then `cgroup.procs`.
+  - Reads stats (`memory.peak`, `cpu.stat usage_usec`, `pids.peak`, `memory.events oom_kill`).
+  - Removes the leaf with `rmdir`, retrying for up to 1 s. Plain file I/O only.
+- `src/container.c`:
+  - The cgroup check runs before `clone`. The PID is moved into the leaf before the child is released through the existing ready/go pipe. On setup failure the child gets `'A'` and SIGKILL.
+  - SIGINT/SIGTERM handlers kill the container. Two `volatile sig_atomic_t` globals are documented as necessary.
+  - Cleanup (veth and cgroup) runs on every path. OOM gives a message and exit 137.
+  - The parent side was split into `parent_setup`, `supervise` and `finish_cgroup`.
+- `src/main.c`: added `--memory N[K|M|G]`, `--cpus X`, `--pids N` and `--stats`, each with validation and specific errors. `--stats` without limits only warns. Limits go in `container_config`.
+- Makefile: added `src/cgroup.c` and a `test-phase3` target.
+- New `tests/phase3_test.sh` with 7 groups of checks, including SIGTERM cleanup and the no-limits case.
+- Found while designing the cpu test: busybox `timeout` execs its command as PID 1, and PID 1 ignores the SIGTERM. The test and docs wrap it in `sh -c '...; true'`. The suggested demo `-- timeout 3 sh -c 'while :; do :; done'` would hang (Ctrl-C still stops it via minibox).
+- Docs: new `cgroup.md`, `include/cgroup.md`, `tests/phase3_test.md`. Updated the container/main/Makefile docs, README and ARCHITECTURE. Added a "Phase 3" section to VIVA_NOTES.
+- `make` is warning-free. Validation errors were checked without root. Not yet run as root.
