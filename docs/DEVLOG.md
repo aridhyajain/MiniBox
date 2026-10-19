@@ -228,3 +228,10 @@
 - **New doc** `docs/ui/requirements.md` for `ui/requirements.txt`.
 - `src/` and `include/` untouched; no git, no sudo.
 - `tests/test_build_deliverables.py`: `test_real_repository_tables_are_complete` expected `ui/requirements.txt` to be left out of Appendix B; it now has a doc, so nothing is omitted (test and its doc updated).
+
+## 2026-10-19 – web UI restyle finished (style.css, app.js, docs)
+- **Why.** `ui/templates/index.html` had been restyled but `style.css` and `app.js` were not: no CSS for `mono num check wide actions`, Init checkbox misplaced, rows rendered with 10 columns under an 8-column header.
+- **`ui/static/style.css`** rewritten: light palette in CSS variables, one accent, 2px radius, 1px borders, no shadows/gradients/animation, system fonts, run form as a label grid with the Init checkbox on one line, table in its own scroll box with sticky header and right-aligned `num` columns, state as plain text with a small square, `remove` in red text/border, 2px accent focus outline, breakpoints at 640 and 420 px. Contrast of all text pairs computed (lowest 5.5:1).
+- **`ui/static/app.js`**: only `renderTable()` changed (8 cells: id, name/command, state, memory, cpu, pids, started, actions; `textContent`/DOM only) and the unused `formatLimits` was removed; button labels lower-cased. All element ids, API calls, token handling, polling and the confirm dialog are unchanged.
+- **Checked** with Windows headless Chrome on a copy of the page with a stubbed `fetch` (nothing added to the repo): zero containers and three (running, exited 0, exited 137) at 1100 px and in a 380 px frame, plus detail panel and error banner; fixed a wrapping id column and table overflow found that way. Not tested against a live server (needs sudo).
+- Docs: `docs/ui/static/style.md`, `docs/ui/static/app.md`, `docs/ui/templates/index.md`. `src/`, `include/`, `ui/app.py`, `ui/validation.py`, `ui/minibox_client.py` untouched; no git, no sudo.

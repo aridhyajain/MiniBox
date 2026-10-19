@@ -1,7 +1,7 @@
 # ui/templates/index.html
 
 ## Purpose
-The single page of the web UI: static markup only. It contains the launch form, the containers table, the empty-state
+The single page of the web UI: static markup only (lower-case labels, no cards; styled by `style.css`). It contains the run form, the containers table (8 columns: id, name / command, state, memory, cpu, pids, started, actions), the empty-state
 message, a (hidden until used) detail panel with logs and an exec box, and an error banner. It loads only
 `/static/style.css` and `/static/app.js` from the same origin (no CDN, no fonts, no inline scripts or styles), so it works offline
 and satisfies the Content-Security-Policy `default-src 'self'`. All dynamic content is filled in by `app.js`.
@@ -11,7 +11,7 @@ None (markup). Elements `app.js` relies on, by `id`:
 | id | Role |
 |----|------|
 | `banner` | error messages (`role="alert"`, hidden when empty) |
-| `launch-form`, `f-command`, `f-name`, `f-hostname`, `f-memory`, `f-cpus`, `f-pids`, `f-net`, `f-init` (checkbox "Init (reap zombies, forward signals)"), `launch-btn` | launch form |
+| `launch-form`, `f-command`, `f-name`, `f-hostname`, `f-memory`, `f-cpus`, `f-pids`, `f-net`, `f-init` (checkbox "init: run a reaper as PID 1 ..."), `launch-btn` | launch form |
 | `empty`, `containers`, `rows` | empty state, table, table body |
 | `detail`, `detail-title`, `detail-close` | detail panel for the selected container |
 | `logs`, `logs-refresh` | log output (last 200 lines) and its refresh button |

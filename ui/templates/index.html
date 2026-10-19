@@ -10,50 +10,56 @@
 <body>
   <header class="top">
     <h1>minibox</h1>
-    <span class="muted">containers on this machine &middot; localhost only</span>
+    <span class="muted">container runtime, local control panel (127.0.0.1 only)</span>
   </header>
 
   <main>
     <div id="banner" class="banner" role="alert" hidden></div>
 
-    <section class="card">
-      <h2>Launch a container</h2>
+    <section>
+      <h2>run</h2>
       <form id="launch-form" autocomplete="off">
-        <label class="wide">Command
-          <input id="f-command" name="command" required maxlength="1000"
+        <label class="wide">command
+          <input id="f-command" class="mono" name="command" required maxlength="1000"
                  placeholder="sh -c 'echo hello; sleep 300'" spellcheck="false">
         </label>
-        <label>Name <input id="f-name" name="name" maxlength="31" placeholder="optional" spellcheck="false"></label>
-        <label>Hostname <input id="f-hostname" name="hostname" maxlength="63" placeholder="optional" spellcheck="false"></label>
-        <label>Memory <input id="f-memory" name="memory" maxlength="14" placeholder="e.g. 64M"></label>
-        <label>CPUs <input id="f-cpus" name="cpus" maxlength="8" placeholder="e.g. 0.5" inputmode="decimal"></label>
-        <label>PIDs <input id="f-pids" name="pids" maxlength="5" placeholder="e.g. 32" inputmode="numeric"></label>
-        <label>Network
+        <label>name <input id="f-name" class="mono" name="name" maxlength="31" spellcheck="false"></label>
+        <label>hostname <input id="f-hostname" class="mono" name="hostname" maxlength="63" spellcheck="false"></label>
+        <label>memory (K, M or G) <input id="f-memory" class="mono" name="memory" maxlength="14" placeholder="64M"></label>
+        <label>cpus (cores) <input id="f-cpus" class="mono" name="cpus" maxlength="8" placeholder="0.5" inputmode="decimal"></label>
+        <label>pids (max tasks) <input id="f-pids" class="mono" name="pids" maxlength="5" placeholder="32" inputmode="numeric"></label>
+        <label>network
           <select id="f-net" name="net">
-            <option value="none">none (isolated)</option>
+            <option value="none">none (own empty namespace)</option>
             <option value="veth">veth (own IP)</option>
           </select>
         </label>
         <label class="wide check">
           <input type="checkbox" id="f-init" name="init">
-          Init (reap zombies, forward signals)
+          init: run a reaper as PID 1 (reaps zombies, forwards signals)
         </label>
         <div class="wide actions">
-          <button id="launch-btn" type="submit" class="primary">Launch</button>
-          <span class="muted">Limits are optional. The command runs inside the project's Alpine rootfs.</span>
+          <button id="launch-btn" type="submit" class="primary">run</button>
+          <span class="muted">Limits are optional. The command runs in the Alpine rootfs of the project.</span>
         </div>
       </form>
     </section>
 
-    <section class="card">
-      <h2>Containers</h2>
-      <div id="empty" class="empty" hidden>No containers yet. Launch one above.</div>
+    <section>
+      <h2>containers</h2>
+      <p id="empty" class="empty" hidden>No containers.</p>
       <div class="table-wrap">
         <table id="containers" hidden>
           <thead>
             <tr>
-              <th>ID</th><th>Name</th><th>Status</th><th>Init</th><th>Command</th><th>Limits</th>
-              <th>IP</th><th>Exit</th><th>Created</th><th>Actions</th>
+              <th scope="col">id</th>
+              <th scope="col">name / command</th>
+              <th scope="col">state</th>
+              <th scope="col" class="num">memory</th>
+              <th scope="col" class="num">cpu</th>
+              <th scope="col" class="num">pids</th>
+              <th scope="col">started</th>
+              <th scope="col">actions</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -61,20 +67,20 @@
       </div>
     </section>
 
-    <section id="detail" class="card" hidden>
+    <section id="detail" hidden>
       <div class="detail-head">
-        <h2 id="detail-title">Container</h2>
-        <button id="detail-close" type="button">Close</button>
+        <h2 id="detail-title">container</h2>
+        <button id="detail-close" type="button">close</button>
       </div>
 
-      <h3>Logs <span class="muted">(last 200 lines)</span></h3>
-      <div class="actions"><button id="logs-refresh" type="button">Refresh</button></div>
+      <h3>logs <span class="muted">last 200 lines</span></h3>
+      <div class="actions"><button id="logs-refresh" type="button">refresh</button></div>
       <pre id="logs" class="output" tabindex="0"></pre>
 
-      <h3>Run a command inside</h3>
+      <h3>exec</h3>
       <form id="exec-form" class="exec" autocomplete="off">
-        <input id="exec-command" placeholder="ps" maxlength="1000" spellcheck="false" aria-label="Command to run inside the container">
-        <button id="exec-btn" type="submit">Run</button>
+        <input id="exec-command" class="mono" placeholder="ps" maxlength="1000" spellcheck="false" aria-label="Command to run inside the container">
+        <button id="exec-btn" type="submit">run</button>
       </form>
       <div id="exec-status" class="muted"></div>
       <pre id="exec-out" class="output" tabindex="0"></pre>

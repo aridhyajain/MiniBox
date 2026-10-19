@@ -13,9 +13,9 @@ same-origin `/api`. **Everything that comes from the server or from a container 
 | `showError(msg)` / `clearError()` | text | – | the red banner at the top |
 | `busy(button, work)` | button, function returning a Promise | Promise | disables the button until the work finishes |
 | `el(tag, class, text)` | – | element | creates an element with `textContent` |
-| `formatMemory`, `formatLimits`, `formatAge` | numbers | text | `67108864` -> `64M`; `mem=64M cpu=0.5 pids=32`; `12s ago` |
-| `actionButton(...)` | label, id, action, handler | button | per-row button that stays disabled while its request runs (state kept in `pending`, so the 3 s re-render does not re-enable it) |
-| `renderTable()` | – | – | rebuilds the table body from `containers` (including an Init column: `yes` only if `init === true` in the JSON, else `-`); shows the empty state when there are none |
+| `formatMemory`, `formatAge` | numbers | text | `67108864` -> `64M`; `12s ago` |
+| `actionButton(...)` | label, class, id, action, handler | button | per-row button that stays disabled while its request runs (state kept in `pending`, so the 3 s re-render does not re-enable it) |
+| `renderTable()` | – | – | rebuilds the table body from `containers`, exactly 8 cells per row in the order of the header: id; name over command (`div.name`, `div.cmd`; full command in `title`); state (`span.state state-<status>` as plain text, with the exit code for ended containers, e.g. `exited (137)`); memory, cpu, pids (class `num`, from the container's limits, `-` when unset); started (`formatAge(created_at)`); actions (`logs / exec`, `stop` only if running, `remove`). IP and Init are no longer shown. Shows the empty state when there are none |
 | `refresh()` | – | Promise | `GET /api/containers`; one request at a time; closes the detail panel if its container vanished |
 | `stopContainer(c)`, `removeContainer(c)` | container | Promise | `POST .../stop`, `DELETE ...` (remove asks for confirmation) |
 | `launch(event)` | submit event | – | sends the form fields that are filled in; empty ones are omitted so the server applies defaults. The Init checkbox adds `init: true` (a real boolean) only when ticked, and is unticked after a successful launch |

@@ -82,14 +82,6 @@
     return bytes + "B";
   }
 
-  function formatLimits(c) {
-    var parts = [];
-    if (c.memory) { parts.push("mem=" + formatMemory(c.memory)); }
-    if (c.cpus) { parts.push("cpu=" + c.cpus); }
-    if (c.pids) { parts.push("pids=" + c.pids); }
-    return parts.length ? parts.join(" ") : "-";
-  }
-
   function formatAge(epoch) {
     if (!epoch) { return "-"; }
     var secs = Math.max(0, Math.floor(Date.now() / 1000) - epoch);
@@ -130,27 +122,37 @@
 
     containers.forEach(function (c) {
       var tr = el("tr", c.id === selectedId ? "selected" : "");
+      // 8 cells, in the order of the header in index.html:
+      // id, name / command, state, memory, cpu, pids, started, actions
       tr.appendChild(el("td", "mono", c.id));
-      tr.appendChild(el("td", "", c.name || "-"));
-      var status = el("td");
-      status.appendChild(el("span", "badge " + (/^[a-z]+$/.test(c.status) ? c.status : ""), c.status));
-      tr.appendChild(status);
-      tr.appendChild(el("td", "mono", c.init === true ? "yes" : "-"));
-      var cmd = el("td", "cmd mono", c.command || "");
+
+      var what = el("td");
+      what.appendChild(el("div", "name", c.name || "-"));
+      var cmd = el("div", "cmd mono", c.command || "");
       cmd.title = c.command || "";
-      tr.appendChild(cmd);
-      tr.appendChild(el("td", "mono", formatLimits(c)));
-      tr.appendChild(el("td", "mono", c.ip || "-"));
-      tr.appendChild(el("td", "mono", c.status === "running" ? "-" : String(c.exit_code)));
+      what.appendChild(cmd);
+      tr.appendChild(what);
+
+      // state: plain text with a small coloured square (CSS class), exit code if it has ended
+      var state = el("td");
+      var text = c.status === "running" || c.exit_code === undefined || c.exit_code === null
+        ? String(c.status) : c.status + " (" + c.exit_code + ")";
+      state.appendChild(el("span", "state state-" + (/^[a-z]+$/.test(c.status) ? c.status : "other"), text));
+      tr.appendChild(state);
+
+      // limits as the API reports them; 0 or missing means "no limit"
+      tr.appendChild(el("td", "num mono", c.memory ? formatMemory(c.memory) : "-"));
+      tr.appendChild(el("td", "num mono", c.cpus ? String(c.cpus) : "-"));
+      tr.appendChild(el("td", "num mono", c.pids ? String(c.pids) : "-"));
       tr.appendChild(el("td", "", formatAge(c.created_at)));
 
       var actions = el("td");
       var row = el("div", "btn-row");
-      row.appendChild(actionButton("Logs / exec", "", c.id, "select", function () { select(c.id); }));
+      row.appendChild(actionButton("logs / exec", "", c.id, "select", function () { select(c.id); }));
       if (c.status === "running") {
-        row.appendChild(actionButton("Stop", "", c.id, "stop", function () { return stopContainer(c); }));
+        row.appendChild(actionButton("stop", "", c.id, "stop", function () { return stopContainer(c); }));
       }
-      row.appendChild(actionButton("Remove", "danger", c.id, "remove", function () { return removeContainer(c); }));
+      row.appendChild(actionButton("remove", "danger", c.id, "remove", function () { return removeContainer(c); }));
       actions.appendChild(row);
       tr.appendChild(actions);
       rows.appendChild(tr);
