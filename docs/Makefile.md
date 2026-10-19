@@ -1,30 +1,37 @@
 # Makefile
 
 ## Purpose
-Single entry point for building and setup tasks. In Phase 0 `all` is a placeholder.
+Single entry point for building, setup and test instructions.
 
 ## Variables
-`CC=gcc`, `CFLAGS=-std=c11 -Wall -Wextra -Werror -g`, `BUILD=build`.
+`CC=gcc`, `CFLAGS=-std=c11 -Wall -Wextra -Werror -g -Iinclude -MMD -MP`, `BUILD=build`,
+`TARGET=minibox`, `SRCS=src/main.c src/container.c src/rootfs.c`, `OBJS` = `build/*.o`.
+`-MMD -MP` write `build/*.d` files so objects rebuild when a header changes (`-include` at the bottom).
 
 ## Targets
 | Target | Does | Errors / side effects |
 |--------|------|-----------------------|
-| `all` | prints a placeholder message | none |
+| `all` (default) | builds `./minibox` | compiler warnings are errors |
+| `minibox` | links the objects | – |
+| `build/%.o` | compiles one source file | creates `build/` |
 | `check-env` | runs `scripts/check_env.sh` | non-zero exit if a check fails |
-| `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 means run the printed sudo command |
-| `clean` | `rm -rf build` | deletes build outputs only (never `rootfs/`) |
+| `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
+| `test` | builds, then prints `sudo tests/phase1_test.sh` | never runs sudo itself |
+| `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
-All targets are `.PHONY`.
+All non-file targets are `.PHONY`.
 
 ## System calls used and why
-None directly; `make` uses `fork`/`execve`/`wait` to run recipe commands.
+None directly; `make` uses `fork`/`execve`/`wait` to run recipes, and file timestamps (`stat`) to decide what to rebuild.
 
 ## OS concept
-Process creation (`fork`+`exec`) by a build tool; dependency-driven builds (more relevant once C sources exist).
+Process creation by a build tool; dependency-driven incremental builds.
 
 ## How to test
 ```sh
-make            # placeholder message
-make check-env  # environment report
-make clean      # no error even if build/ is missing
+make            # compiles with no warnings, creates ./minibox
+make            # second run: "Nothing to be done"
+touch include/rootfs.h && make   # rebuilds container.o and rootfs.o
+make test       # prints the sudo command
+make clean
 ```
