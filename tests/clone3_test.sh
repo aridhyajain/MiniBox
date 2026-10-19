@@ -298,36 +298,52 @@ done
 report "failed starts left no container state behind" $? "ps -a rows: $(state_rows)"
 
 # ---------------------------------------------------------------------------------------------
-# Informational timing (never fails): median of $TIMING_RUNS runs of `run --net none -- /bin/true`
-# with limits. --net none is explicit (and printed below): the default is also none, but a veth
+# Informational timing (never fails), same measurement as bench/bench.py. --net none is explicit (and printed below): the default is also none, but a veth
 # setup (its floor is far above the cgroup cost, see docs/BENCHMARKS.md) would hide the difference.
 # ---------------------------------------------------------------------------------------------
 echo "---- timing (information only) ----"
-time_us() { # time_us <mode>: wall-clock microseconds of one run
-    local s e
-    s=$(date +%s%N)
-    run_mode "$1" 30 "$MB" run --rootfs "$ROOTFS" --net none --memory 256M --cpus 1 --pids 64 \
-        -- /bin/true </dev/null >/dev/null 2>&1
-    e=$(date +%s%N)
-    echo $(( (e - s) / 1000 ))
-}
-stat_ms() { # stat_ms <median|min> <values in us...>
-    local what=$1
-    shift
-    printf '%s\n' "$@" | sort -n | awk -v what="$what" '
-        { v[NR] = $1 }
-        END { if (what == "min") printf "%.1f", v[1] / 1000;
-              else printf "%.1f", (NR % 2 ? v[(NR + 1) / 2] : (v[NR / 2] + v[NR / 2 + 1]) / 2) / 1000 }'
-}
-time_us clone3 >/dev/null; time_us migrate >/dev/null          # warm-up
-fast=(); slow=()
-for _ in $(seq 1 "$TIMING_RUNS"); do                            # interleaved: drift hits both alike
-    fast+=("$(time_us clone3)")
-    slow+=("$(time_us migrate)")
-done
-printf 'INFO: %-52s %10s %10s\n' "run --net none /bin/true, $TIMING_RUNS runs, limits" "median ms" "min ms"
-printf 'INFO: %-52s %10s %10s\n' "clone3 into the cgroup" "$(stat_ms median "${fast[@]}")" "$(stat_ms min "${fast[@]}")"
-printf 'INFO: %-52s %10s %10s\n' "clone() + cgroup.procs (migrate)" "$(stat_ms median "${slow[@]}")" "$(stat_ms min "${slow[@]}")"
+# Same measurement as bench/bench.py (timed(): perf_counter_ns around subprocess.run, stdin/stdout/
+# stderr to /dev/null, foreground run, same limits as LIMITS_FOR_STARTUP). One python3 process does
+# the whole loop, so no date/env/timeout/subshell is inside the timed region and there is no sleep or
+# polling. 3 warm-up runs per mode are discarded; the modes alternate to spread drift over both.
+# The whole python3 helper runs under `timeout`. For the full benchmark see bench/bench.py.
+TIMING_WARMUPS=3
+TIMING_CMD=("$MB" run --rootfs "$ROOTFS" --net none --memory 256M --cpus 1 --pids 64 -- /bin/true)
+echo "INFO: command: ${TIMING_CMD[*]}"
+echo "INFO: migrate mode adds MINIBOX_NO_CLONE3=1 to the environment; $TIMING_WARMUPS warm-ups discarded, $TIMING_RUNS runs per mode, interleaved"
+timing_py='
+import os, subprocess, sys, time
+runs, warm = int(sys.argv[1]), int(sys.argv[2])
+cmd = sys.argv[3:]
+base = {k: v for k, v in os.environ.items() if k != "MINIBOX_NO_CLONE3"}
+envs = {"clone3": base, "migrate": dict(base, MINIBOX_NO_CLONE3="1")}
+def one(mode):
+    t0 = time.perf_counter_ns()
+    subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, env=envs[mode], timeout=20)
+    return (time.perf_counter_ns() - t0) / 1e6
+for _ in range(warm):
+    for m in envs: one(m)
+res = {m: [] for m in envs}
+for _ in range(runs):
+    for m in envs: res[m].append(one(m))
+def pct(v, q):
+    v = sorted(v); i = (len(v) - 1) * q; lo = int(i)
+    return v[lo] + (v[min(lo + 1, len(v) - 1)] - v[lo]) * (i - lo)
+for m, v in res.items():
+    print("%s %.1f %.1f %.1f" % (m, pct(v, 0.5), min(v), pct(v, 0.95)))
+'
+if out=$(timeout 300 python3 -I -c "$timing_py" "$TIMING_RUNS" "$TIMING_WARMUPS" "${TIMING_CMD[@]}" 2>&1); then
+    printf 'INFO: %-34s %10s %10s %10s\n' "mode ($TIMING_RUNS runs)" "median ms" "min ms" "p95 ms"
+    printf '%s\n' "$out" | awk '{ printf "INFO: %-34s %10s %10s %10s\n", ($1 == "clone3" ? "clone3 into the cgroup" : "clone() + cgroup.procs (migrate)"), $2, $3, $4 }'
+    printf '%s\n' "$out" | awk '
+        $1 == "clone3" { c = $2 } $1 == "migrate" { m = $2 }
+        END { d = m - c; if (d < 0) d = -d
+              if (d < 1) print "INFO: the two modes look identical (medians differ by under 1 ms); not tuned."
+              else printf "INFO: medians differ by %.1f ms.\n", m - c }'
+else
+    echo "INFO: timing not available (helper failed or timed out): $out"
+fi
 
 # ---------------------------------------------------------------------------------------------
 # Nothing may be left at the end.
