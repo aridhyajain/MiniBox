@@ -22,6 +22,11 @@ Single entry point for building, setup and test instructions.
 | `test-phase4` | builds, then prints `sudo tests/phase4_test.sh` | never runs sudo itself |
 | `test-phase4b` | builds, then prints `sudo tests/phase4b_test.sh` | never runs sudo itself |
 | `test-phase5` | builds, then prints the commands for the UI tests (`scripts/setup_ui.sh`, `sudo tests/phase5_test.sh`, the unit tests) | never runs sudo itself |
+| `test-phase6` | builds, then prints `sudo bash tests/phase6_test.sh` | never runs sudo itself |
+| `test-bench` | runs `python3 -m unittest tests/test_bench_stats.py -v` (no root) | – |
+| `bench` | builds, then prints `sudo python3 bench/bench.py all` (full run, N=30) | prints only; never runs sudo itself |
+| `bench-quick` | builds, then prints `sudo python3 bench/bench.py all --quick` | prints only; never runs sudo itself |
+| `charts` | runs `python3 bench/make_charts.py bench/results/latest` (no root) | error if no results exist yet |
 | `ui-setup` | prints `scripts/setup_ui.sh` (creates `ui/venv`, no sudo) | prints only |
 | `ui-run` | builds, then prints `sudo scripts/run_ui.sh 8080` | prints only; never runs sudo itself |
 | `demo` | builds, then prints the commands to run the Review 1 demo | never runs sudo itself |

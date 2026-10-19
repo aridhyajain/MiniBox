@@ -159,7 +159,7 @@ browser ──HTTP, 127.0.0.1 only, Bearer token──> ui/app.py (Flask, runs a
 1. **Runtime core (C)** – namespaces, rootfs, network and cgroups done (Phases 1–3).
 2. **CLI + state store** – `run -d`, `ps`, `logs`, `stop`, `rm` done (Phase 4a); `exec` (`setns`) done (Phase 4b).
 3. **Web UI (Python Flask)** – done (Phase 5), see "Web UI" below.
-4. **Benchmarks** – startup time, limit enforcement, comparison to a bare process.
+4. **Benchmarks** – done (Phase 6), see "Benchmarks (Phase 6)" below.
 
 ## Phases
 0. Setup · 1. Core isolation · 2. IPC/network · 3. cgroups · 4a. container management · 4b. exec · **5. Web UI** · 6. Benchmarks

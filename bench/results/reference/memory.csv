@@ -1,0 +1,8 @@
+config,k,cgroup_memory_current_total,init_mem_total,monitor_or_shim_mem_total,total_bytes,per_container_bytes,note
+minibox,1,253952,1007616,223232,477184,477184,pss
+minibox,5,1253376,1320960,970752,2224128,444826,pss
+minibox,10,2764800,1582080,2002944,4767744,476774,pss
+host_sleep,1,,5261312,,5261312,5261312,pss
+host_sleep,5,,11110400,,11110400,2222080,pss
+host_sleep,10,,18353152,,18353152,1835315,pss
+docker,,,,,,,not measured: docker CLI not found

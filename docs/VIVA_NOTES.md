@@ -345,3 +345,62 @@ count the lines of `cgroup.procs` (see `tests/lib.sh`) to ask "is anything still
 
 **How Docker solves it.** `docker run --init` starts a tiny init program (`tini`) as PID 1 and runs the user's command as its child. `tini` forwards
 signals and calls `wait()` in a loop, so orphans are reaped. minibox does not have this yet; an optional `--init` flag is listed as future work.
+
+## Phase 6 – benchmarks and limit enforcement
+
+### What does each benchmark prove?
+- **Startup time** compares how long it takes to run `/bin/true` bare, in plain namespaces (`unshare`), in minibox without and with limits, with a veth network, and (if present) in Docker. The steps add up: namespaces cost a little, `pivot_root` and cgroups cost more, veth setup costs most. It shows where minibox's time goes, not that it is "faster than Docker".
+- **Memory** shows what one more container costs: `memory.current` of its cgroup, the PSS of its init, and the PSS of the monitor process outside the cgroup. Running 1, 5 and 10 containers makes the cost per extra container visible (the slope), separate from fixed costs.
+- **Limits** prove the cgroup limits really work, with numbers from the kernel instead of "it seemed to work".
+
+### Why interleave the runs and discard warm-up runs?
+Computers drift: the CPU speeds up or slows down, caches fill, other programs wake up. If all runs of one configuration came first, the drift would look like a difference between configurations. Shuffling the order spreads the drift over all of them. The first runs are slow because the binary, rootfs files and libraries are not in the page cache yet; those warm-up runs are thrown away so every measured run sees the same warm state.
+
+### Why median and p95 instead of the mean?
+A few slow runs (the OS was busy) pull the mean up. The median is the typical run and ignores those. p95 says "95 % of runs were at least this fast", so it shows how bad the slow tail is. The mean and standard deviation are still in the CSV for completeness.
+
+### How do the cgroup files show the limits working?
+- `memory.events` has an `oom_kill` counter: at least 1 means the kernel killed the process for hitting `memory.max`. `memory.peak` is the highest usage ever; it stays near the limit and does not go far above it. A control run with a bigger limit shows the same workload really needs more.
+- `pids.peak` is the highest number of processes in the cgroup; with `pids.max=20` it cannot exceed 20, and the extra `fork()` calls fail with `EAGAIN`.
+- `cpu.stat` `usage_usec` is the CPU time used. Divided by the wall-clock time it gives the CPU share: with `cpu.max` of 50000/100000 a busy loop gets about 0.5. An unthrottled control gets about 1.0.
+- minibox prints these with `--stats` just before it removes the cgroup, because the cgroup disappears with the container.
+
+### Why can't the benchmark numbers be compared directly to Docker?
+Docker has a daemon, a different filesystem (overlayfs), more namespaces and security settings (seccomp, capabilities), and a client-server round trip. WSL2 is also a virtual machine, so timings are not bare-metal numbers. The Docker row is a rough reference only.
+
+### Why did a benchmark workload hang the container? (the PID 1 lesson)
+The CPU test ran `sh -c "timeout 2 sh -c '...busy loop...'"`. busybox `sh -c` **execs the last command** instead of forking it, so `timeout` replaced the shell and became PID 1 of the container. `timeout` kills its child after 2 seconds and then ends itself by sending itself a signal. That is the problem: **the PID-namespace init is special**. The kernel drops signals sent to it from inside its own namespace unless the program installed a handler for them (only signals from the parent namespace, such as SIGKILL from the host, always work). `timeout` has no handler, so it could not kill itself and the container never ended. A normal process has no such protection: the same signal would just kill it. Appending `; exit 0` keeps the shell as PID 1 (it forks `timeout`, waits for it, and exits normally).
+
+How it relates to other things: the same "PID 1 is special" rule is why `sleep 300` as PID 1 ignores SIGTERM (so `stop` waits for its grace period before SIGKILL, and the benchmark cleanup writes to `cgroup.kill` instead), and why orphaned zombies pile up under minibox's PID 1 (PID 1 inherits orphans and is expected to `wait()` for them). Docker's `--init` runs a tiny init (`tini`) as PID 1 that has signal handlers and reaps children, which avoids all three problems. minibox does not have `--init` yet.
+
+**The fix was in the benchmark, not the runtime**: minibox behaves exactly like a real container runtime here. The benchmark now keeps a shell as PID 1, gives every call a timeout, and records `ERROR`/`TIMEOUT` rows instead of aborting.
+
+## Phase 6 results – reading the numbers
+The numbers are in `docs/BENCHMARKS.md` (tables and analysis) and come from `bench/results/reference/`. Docker was not measured, so never quote a Docker figure.
+
+### How to read the numbers
+- **Startup** is the time from launching the command to its exit, in milliseconds. Read the **median** (the typical run) first, then **p95** (the slow tail). Compare configurations as ratios.
+- **Memory** is bytes per container. The real minibox overhead is the monitor process plus the cgroup's memory; the host `sleep` is a reference only.
+- **Limits** are expected-versus-measured pairs with a status; OK means the kernel behaved as expected.
+
+### What to be able to explain about each chart
+- **`startup.svg`:** five bars (plain process, `unshare`, minibox without limits, with limits, with veth). The y axis is a **log scale**. Be able to say that the first three are close (so rootfs setup adds little on top of namespaces), that the limits bar is higher at the median but has the same minimum (observed, cause not investigated), and that veth is highest (likely the `ip` commands). The whisker is p95. Docker is shown as "not measured".
+- **`memory.svg`:** bars for 1, 5, 10 containers: cgroup memory, init PSS and monitor PSS, per container. Explain why init PSS falls as k grows, and that the total (cgroup + monitor) stays about the same. The dashed host `sleep` line is a different binary, so not a fair baseline.
+- **`limits.svg`:** a table of eight checks with expected, measured and status. Be able to say what each limit test did and which kernel file proves it.
+
+### Likely viva questions
+**Why the median and not the mean?** A few slow runs pull the mean up (for `minibox_nolimits` the mean is 5.733 ms and the median 3.994 ms). The median is the typical run. We still show the mean and p95 because the slow runs matter too.
+
+**Why interleave the runs and warm up first?** The machine drifts (CPU speed, caches, other programs). Shuffling the runs spreads that drift over all configurations so it does not look like a difference between them. The first runs are slow because files are not cached yet; discarding warm-ups makes every measured run start from the same warm state.
+
+**Why a log scale on the startup chart?** The values range from 1.716 ms to 165.379 ms. On a linear axis the small bars would be invisible slivers. On a log axis, equal distances are equal ratios. The cost is that bar heights cannot be compared by eye as differences.
+
+**Why is the memory baseline not fair?** The host `sleep` is a different program (glibc, dynamically linked) from the container's `sleep` (busybox), so the difference says nothing about the container runtime. The fair figure is the minibox overhead: monitor process plus cgroup memory per container.
+
+**Why does PSS per container drop with more containers?** PSS divides each shared page (the busybox binary, libc) among the processes that share it. With one container its init pays for all of it (about 0.96 MiB); with ten it pays a tenth (about 0.15 MiB). The first container pays more of the shared cost. It is expected, not a measurement error.
+
+**What does an OOM kill look like in `memory.events`?** The `oom_kill` counter is 1 or more (3 in the reference run), `memory.peak` stays at the limit (64.0 MiB for a 64M limit), and the container exits with code 137 (SIGKILL). The control run with a bigger limit exits 0, which shows the limit caused the kill.
+
+**Why is startup with veth slower?** The likely reason is that the setup runs several `ip` commands as separate processes and moves interfaces between network namespaces. This is the likely reason, not something we measured.
+
+**Why is `minibox_limits` slow at the median when its minimum is the same?** Observed and unexplained: most runs have an extra delay of roughly 30 ms. We did not investigate, so we do not claim a cause; hypotheses are cgroup creation or removal cost and waiting on teardown.

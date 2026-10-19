@@ -7,7 +7,7 @@ SRCS    := src/main.c src/commands.c src/options.c src/monitor.c src/state.c \
            src/container.c src/rootfs.c src/net.c src/cgroup.c src/exec.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 ui-setup ui-run demo
+.PHONY: all clean check-env rootfs test test-all test-phase3 test-phase4 test-phase4b test-phase5 test-phase6 test-bench bench bench-quick charts ui-setup ui-run demo
 
 all: $(TARGET)
 
@@ -74,6 +74,25 @@ demo: $(TARGET)
 	@echo "Review 1 demo needs root. Run:"
 	@echo "  sudo scripts/demo_review1.sh          # press Enter between steps"
 	@echo "  sudo scripts/demo_review1.sh --auto   # 2 s pause per step (recording)"
+
+# Phase 6: benchmarks. They need root; make prints the command. Charts and unit tests need no root.
+test-phase6: $(TARGET)
+	@echo "Benchmark tooling check needs root. Run:"
+	@echo "  sudo bash tests/phase6_test.sh"
+
+test-bench:
+	python3 -m unittest tests/test_bench_stats.py -v
+
+bench: $(TARGET)
+	@echo "Full benchmark (N=30, a few minutes) needs root. Run:"
+	@echo "  sudo python3 bench/bench.py all"
+
+bench-quick: $(TARGET)
+	@echo "Quick benchmark (N=5) needs root. Run:"
+	@echo "  sudo python3 bench/bench.py all --quick"
+
+charts:
+	python3 bench/make_charts.py bench/results/latest
 
 clean:
 	rm -rf $(BUILD) $(TARGET)

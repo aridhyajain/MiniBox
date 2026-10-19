@@ -126,9 +126,44 @@ sudo scripts/demo_review1.sh --auto   # 2 s pause per step, for recording
 
 See `docs/REVIEW1.md` for the presentation guide and likely viva questions. `make demo` prints these commands.
 
+## Benchmarks (Phase 6)
+Startup time, memory per container and limit-enforcement checks, with CSV results and SVG charts. They need root, so make only prints the commands:
+```sh
+make bench-quick     # prints: sudo python3 bench/bench.py all --quick
+make bench           # prints: sudo python3 bench/bench.py all
+make charts          # no root: python3 bench/make_charts.py bench/results/latest
+```
+Method, how to read the charts and the limitations of the numbers: `docs/BENCHMARKS.md`.
+
+### Results (reference run)
+One full run (N=30 per configuration) on the author's WSL2 machine is kept in `bench/results/reference/`. Starting a container without limits took a median of 3.994 ms, close to raw `unshare` (3.893 ms), so the rootfs setup adds little to namespace creation. With limits the median was 32.124 ms while the minimum stayed at 3.506 ms; that extra delay is observed but unexplained. With a veth network the median was 165.379 ms, likely because of the `ip` commands. Docker was not measured (not installed). All eight limit checks passed. Details, the full tables, the machine, the analysis and the limitations are in `docs/BENCHMARKS.md`.
+
+| Configuration | n | min (ms) | median (ms) | mean (ms) | p95 (ms) | stdev (ms) |
+|---|---|---|---|---|---|---|
+| host_true | 30 | 1.454 | 1.716 | 1.982 | 3.640 | 0.703 |
+| unshare_ns | 30 | 3.527 | 3.893 | 4.364 | 8.377 | 1.567 |
+| minibox_nolimits | 30 | 3.439 | 3.994 | 5.733 | 9.242 | 2.448 |
+| minibox_limits | 30 | 3.506 | 32.124 | 21.922 | 33.828 | 16.043 |
+| minibox_veth_limits | 30 | 114.504 | 165.379 | 150.778 | 194.342 | 30.341 |
+| docker | not measured: docker CLI not found | - | - | - | - | - |
+
+Startup chart (bar = median, whisker = p95; **the y axis is a log scale**):
+
+![Startup time, log scale](bench/results/reference/startup.svg)
+
+Memory per container (1, 5 and 10 containers running `sleep 300`):
+
+![Memory per container](bench/results/reference/memory.svg)
+
+Limit enforcement (expected versus measured):
+
+![Limit enforcement](bench/results/reference/limits.svg)
+
+Regenerate the tables with `python3 bench/make_report_tables.py bench/results/reference`.
+
 ## Documentation
 
-See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md` and `docs/DEVLOG.md`. Every source file has a matching doc under `docs/`.
+See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md`, `docs/DEVLOG.md`, `docs/BENCHMARKS.md`, and the review guides `docs/REVIEW1.md` and `docs/REVIEW2.md`. Every source file has a matching doc under `docs/`.
 
 ## Known limitations
 - minibox does not yet reap orphans in the container's PID 1 (the user's command never calls `wait()`). Orphaned processes that die, for example after a
