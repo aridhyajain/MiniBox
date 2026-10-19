@@ -33,3 +33,4 @@ ui/venv/
 bench/results/*
 !bench/results/reference*/
 !bench/results/analysis/
+CLAUDE.md
