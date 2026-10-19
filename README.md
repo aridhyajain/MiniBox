@@ -25,17 +25,22 @@ make test        # prints the command to run the tests
 ## Run
 
 ```sh
-sudo ./minibox run [--rootfs DIR] [--hostname NAME] -- COMMAND [ARGS...]
+sudo ./minibox run [--rootfs DIR] [--hostname NAME] [--net none|veth] -- COMMAND [ARGS...]
 
-# example
+# example: isolated shell, loopback only
 sudo ./minibox run --rootfs rootfs --hostname mybox -- /bin/sh
+
+# example: also a veth link (container 10.0.0.2 <-> host 10.0.0.1)
+sudo ./minibox run --rootfs rootfs --net veth -- /bin/sh
 ```
 
-Defaults: `--rootfs rootfs`, `--hostname minibox`. The exit code is the command's exit code.
-Phase 1 provides PID, UTS and mount namespace isolation with `pivot_root` into the Alpine rootfs.
+Defaults: `--rootfs rootfs`, `--hostname minibox`, `--net none`. The exit code is the command's exit code.
+Isolation: PID, UTS, mount (with `pivot_root` into the Alpine rootfs), IPC and network namespaces.
+`--net none` gives only a loopback interface; `--net veth` adds a veth pair to the host (needs the host `ip` command; one such container at a time).
 
 ```sh
-sudo tests/phase1_test.sh    # automated checks
+sudo tests/phase1_test.sh    # PID/UTS/mount/pivot_root checks
+sudo tests/phase2_test.sh    # IPC/network/veth checks
 ```
 
 ## Documentation

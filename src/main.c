@@ -1,7 +1,8 @@
 /*
  * main.c - command-line parsing for minibox.
  *
- * Usage: minibox run [--rootfs DIR] [--hostname NAME] -- COMMAND [ARGS...]
+ * Usage: minibox run [--rootfs DIR] [--hostname NAME] [--net none|veth]
+ *                    -- COMMAND [ARGS...]
  */
 #define _GNU_SOURCE
 #include "container.h"
@@ -19,11 +20,26 @@
 static void usage(const char *prog)
 {
     fprintf(stderr,
-            "Usage: %s run [--rootfs DIR] [--hostname NAME] -- COMMAND [ARGS...]\n"
+            "Usage: %s run [--rootfs DIR] [--hostname NAME] [--net none|veth]\n"
+            "               -- COMMAND [ARGS...]\n"
             "  --rootfs DIR     root filesystem directory (default: %s)\n"
             "  --hostname NAME  container hostname (default: %s)\n"
+            "  --net MODE       none = loopback only (default),\n"
+            "                   veth = loopback + veth link, container 10.0.0.2 <-> host 10.0.0.1\n"
             "Must be run as root (sudo).\n",
             prog, DEFAULT_ROOTFS, DEFAULT_HOSTNAME);
+}
+
+/* Parse the --net value. Returns 0 on success, -1 if unknown. */
+static int parse_net_mode(const char *value, enum net_mode *mode)
+{
+    if (strcmp(value, "none") == 0)
+        *mode = NET_NONE;
+    else if (strcmp(value, "veth") == 0)
+        *mode = NET_VETH;
+    else
+        return -1;
+    return 0;
 }
 
 /*
@@ -36,6 +52,7 @@ static int parse_args(int argc, char **argv, struct container_config *cfg)
 
     cfg->rootfs = DEFAULT_ROOTFS;
     cfg->hostname = DEFAULT_HOSTNAME;
+    cfg->net = NET_NONE;
     cfg->argv = NULL;
 
     if (argc < 2 || strcmp(argv[1], "run") != 0)
@@ -53,7 +70,10 @@ static int parse_args(int argc, char **argv, struct container_config *cfg)
             cfg->rootfs = argv[++i];
         else if (strcmp(argv[i], "--hostname") == 0)
             cfg->hostname = argv[++i];
-        else
+        else if (strcmp(argv[i], "--net") == 0) {
+            if (parse_net_mode(argv[++i], &cfg->net) == -1)
+                return -1;
+        } else
             return -1;
     }
     return -1;                          /* no "--" separator found */

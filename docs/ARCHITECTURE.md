@@ -6,30 +6,44 @@ Linux kernel primitives, without Docker.
 
 ## Status
 - **Phase 1 (implemented):** PID, UTS and mount namespaces; `pivot_root` into the Alpine rootfs.
-- Later: IPC and network namespaces, cgroups v2, CLI, Flask UI, benchmarks.
+- **Phase 2 (implemented):** IPC and network namespaces; loopback; optional veth link (`--net veth`). No user namespace.
+- Later: cgroups v2, CLI, Flask UI, benchmarks.
 
-## Modules (Phase 1)
+## Modules
 ```
 src/main.c        parse args, check root, validate rootfs
     |  container_run(cfg)
     v
-src/container.c   mmap stack, clone(NEWPID|NEWUTS|NEWNS), waitpid
-    |  (in child)  rootfs_setup(rootfs)
+src/container.c   mmap stack, pipes, clone(NEWPID|NEWUTS|NEWNS|NEWIPC|NEWNET), waitpid
+    |  (in child)  rootfs_setup(rootfs), net_loopback_up(), net_set_ipv4()
+    |  (in parent) net_veth_setup(pid), net_veth_cleanup(pid)
     v
 src/rootfs.c      private mounts, bind, /dev, pivot_root, /proc, /tmp
+src/net.c         loopback + address via ioctl (child); veth via `ip` (parent)
 ```
-Headers: `include/container.h`, `include/rootfs.h`.
+Headers: `include/container.h`, `include/rootfs.h`, `include/net.h`.
 
-## Child setup order (inside the new namespaces; child is PID 1)
-1. `sethostname(hostname)` – UTS ns
-2. `mount(/, MS_REC|MS_PRIVATE)` – stop mount propagation to the host
-3. bind-mount rootfs onto itself – make it a mount point
-4. tmpfs on `<rootfs>/dev` + `mknod` null/zero/random/urandom/tty (fallback: bind-mount host devices; must happen before the pivot)
-5. `pivot_root(rootfs, rootfs/.pivot_old)`, `chdir("/")`, `umount2(/.pivot_old, MNT_DETACH)`, `rmdir`
-6. mount `proc` on `/proc`, tmpfs on `/tmp`
-7. `chdir("/")`, set `PATH`/`HOME`, `execvp(command)`
+## Setup order
+Child (inside the new namespaces; PID 1):
+1. close the parent's pipe ends; `sethostname(hostname)` – UTS ns
+2. bring up `lo` (ioctl) – network ns
+3. `rootfs_setup`: private mounts, bind rootfs, `/dev`, `pivot_root`, `/proc`, `/tmp`
+4. write `'R'` to the *ready* pipe, then **block** reading the *go* pipe
+5. on `'G'`: (veth) set `eth0` to 10.0.0.2/24 and up; `chdir("/")`, set `PATH`/`HOME`, `execvp(command)`.
+   On `'A'` or EOF: exit 1.
 
-The parent only calls `waitpid` and returns the child's exit code (128+N for signal N).
+Parent: `clone`; (veth) wait for `'R'`, create the veth pair, move the peer into the child's netns
+(by PID), configure the host end; write `'G'` (or `'A'` if that failed); `waitpid`; delete the host veth if it still exists;
+return the child's exit code (128+N for signal N).
+
+## Network topology (`--net veth`)
+```
+ host netns                                  container netns
+ vethh<pid> 10.0.0.1/24  <==== veth ====>    eth0 (was vethc<pid>) 10.0.0.2/24
+                                             lo 127.0.0.1
+```
+`--net none` (default): the container has only `lo`.
+Interface names are unique per PID, but the subnet is fixed, so run one veth container at a time. No NAT/internet.
 
 ## Isolation: namespaces (`clone`/`unshare`)
 | Namespace | Flag | Effect | Status |
@@ -37,8 +51,8 @@ The parent only calls `waitpid` and returns the child's exit code (128+N for sig
 | PID | `CLONE_NEWPID` | Own process tree; first process is PID 1 | done |
 | UTS | `CLONE_NEWUTS` | Own hostname | done |
 | Mount | `CLONE_NEWNS` | Own mount table; allows `pivot_root` and private `/proc` | done |
-| IPC | `CLONE_NEWIPC` | Own SysV IPC / POSIX message queues | planned |
-| Network | `CLONE_NEWNET` | Own network stack (loopback only at first) | planned |
+| IPC | `CLONE_NEWIPC` | Own SysV message queues, shared memory, semaphores | done |
+| Network | `CLONE_NEWNET` | Own interfaces, routes, ports (loopback, optional veth) | done |
 
 ## Filesystem
 The Alpine minirootfs in `rootfs/` becomes `/` via `pivot_root`; the old root is
@@ -56,4 +70,4 @@ Per-container directory under `/sys/fs/cgroup/minibox/<id>/` with
 5. **Benchmarks** – startup time, limit enforcement, comparison to a bare process.
 
 ## Phases
-0. Setup · **1. Core isolation** · 2. IPC/network · 3. cgroups · 4. CLI · 5. Web UI · 6. Benchmarks
+0. Setup · 1. Core isolation · **2. IPC/network** · 3. cgroups · 4. CLI · 5. Web UI · 6. Benchmarks
