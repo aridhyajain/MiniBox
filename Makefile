@@ -6,7 +6,7 @@ TARGET  := minibox
 SRCS    := src/main.c src/container.c src/rootfs.c src/net.c src/cgroup.c
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
-.PHONY: all clean check-env rootfs test test-phase3
+.PHONY: all clean check-env rootfs test test-phase3 demo
 
 all: $(TARGET)
 
@@ -35,6 +35,11 @@ test: $(TARGET)
 test-phase3: $(TARGET)
 	@echo "Phase 3 tests need root. Run:"
 	@echo "  sudo tests/phase3_test.sh"
+
+demo: $(TARGET)
+	@echo "Review 1 demo needs root. Run:"
+	@echo "  sudo scripts/demo_review1.sh          # press Enter between steps"
+	@echo "  sudo scripts/demo_review1.sh --auto   # 2 s pause per step (recording)"
 
 clean:
 	rm -rf $(BUILD) $(TARGET)

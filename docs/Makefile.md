@@ -18,6 +18,7 @@ Single entry point for building, setup and test instructions.
 | `rootfs` | runs `scripts/get_rootfs.sh` | exit 2 = run the printed sudo command |
 | `test` | builds, then prints the sudo commands for all three test scripts | never runs sudo itself |
 | `test-phase3` | builds, then prints `sudo tests/phase3_test.sh` | never runs sudo itself |
+| `demo` | builds, then prints the commands to run the Review 1 demo | never runs sudo itself |
 | `clean` | `rm -rf build minibox` | never touches `rootfs/` |
 
 All non-file targets are `.PHONY`.

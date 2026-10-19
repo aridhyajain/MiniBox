@@ -52,3 +52,12 @@
 - Found while designing the cpu test: busybox `timeout` execs its command as PID 1, and PID 1 ignores the SIGTERM. The test and docs wrap it in `sh -c '...; true'`. The suggested demo `-- timeout 3 sh -c 'while :; do :; done'` would hang (Ctrl-C still stops it via minibox).
 - Docs: new `cgroup.md`, `include/cgroup.md`, `tests/phase3_test.md`. Updated the container/main/Makefile docs, README and ARCHITECTURE. Added a "Phase 3" section to VIVA_NOTES.
 - `make` is warning-free. Validation errors were checked without root. Not yet run as root.
+
+## 2026-10-19 – Review 1 material
+- New `scripts/demo_review1.sh`: interactive 8-step demo (namespace IDs, inside the container, network/veth, IPC, memory/OOM, pids, cpu, cleanup proof). Each step prints heading, one-sentence purpose and the exact commands before waiting; `--auto` waits 2 s instead of Enter. Checks for root, `./minibox`, `rootfs/` and host tools. Interrupt-safe removal of the host IPC queue.
+- New `docs/REVIEW1.md` (phase summary, architecture diagram, demo timings, 10 viva questions, limitations) and `docs/scripts/demo_review1.md`.
+- Makefile: `demo` target prints the sudo commands; README has a Demo section; `docs/Makefile.md` updated.
+- Checked with `bash -n` and a non-root run only (exit 1 with message). Not run as root.
+
+## 2026-10-19 – Demo polish
+- `scripts/demo_review1.sh`: step 3 prints a label line before each command's output; step 7 hides the "Terminated" message from `timeout` with `exec 2>/dev/null` inside the container shell (minibox's `[stats]` output stays visible); step 8 prints only the `cgroups left: N` and `veth interfaces left: N` counts (directory listing removed). On-screen commands match what runs. Docs updated. Checked with `bash -n` only.

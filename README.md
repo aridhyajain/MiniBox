@@ -51,6 +51,15 @@ sudo tests/phase2_test.sh    # IPC/network/veth checks
 sudo tests/phase3_test.sh    # cgroup limit checks
 ```
 
+## Demo (Review 1)
+
+```sh
+sudo scripts/demo_review1.sh          # interactive, Enter between steps (~5 min)
+sudo scripts/demo_review1.sh --auto   # 2 s pause per step, for recording
+```
+
+See `docs/REVIEW1.md` for the presentation guide and likely viva questions. `make demo` prints these commands.
+
 ## Documentation
 
 See `docs/ARCHITECTURE.md`, `docs/VIVA_NOTES.md` and `docs/DEVLOG.md`. Every source file has a matching doc under `docs/`.
