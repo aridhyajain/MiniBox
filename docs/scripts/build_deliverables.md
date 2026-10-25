@@ -24,7 +24,7 @@ Title page (from `config.json`) · table of contents (a real `TOC` field, pre-fi
 **Build checks.** Besides leftovers, doc presence, numbering and the TOC, the build fails (exit 1) listing the problems if: a table is not fixed-layout, its widths do not add up to the text width, its header is not repeated or a row cannot break; a heading still has a `(from ...)` suffix; an excluded README section appears; or the "Test suite overview" table lacks a row for any `tests/*.sh` or `tests/test_*.py` (whose doc is not excluded), the missing names being printed. The summary prints the data-row count of the five largest tables.
 
 ## The PDF report (`report`)
-`report` builds `~/minibox-deliverables/MiniBox_Report.pdf`: the whole project report (title page "Project Report", abstract, contents, chapters 1 to 10, references, appendices A to C). The text is **not** in the repo: it is Markdown in `~/minibox-deliverables/report/`, one file per chapter (`00_abstract.md`, `01_introduction.md` ... `10_conclusion.md`, see `REPORT_CHAPTERS`), one per appendix (`appendix_a_cli.md`, `appendix_b_layout.md`, `appendix_c_reproduce.md`, see `REPORT_APPENDICES`) and `references.md`, so it can be edited freely; the figures are the SVGs written by `scripts/make_report_diagrams.py` into `report/figures/` (`make deliverables-report` runs both steps). The script reads these files, assembles HTML and renders it with WeasyPrint; only the venv python has WeasyPrint, so the script re-runs itself under it (before printing anything), like `docs`.
+`report` builds `~/minibox-deliverables/MiniBox_Report.pdf`: the whole project report (title page "Project Report", abstract, contents, chapters 1 to 10, references, Appendix A). The condensed report is about 20 pages; the 55-page version is kept outside the repo in `~/minibox-deliverables/report_full/` and `MiniBox_Report_full.pdf`. The text is **not** in the repo: it is Markdown in `~/minibox-deliverables/report/`, one file per chapter (`00_abstract.md`, `01_introduction.md` ... `10_conclusion.md`, see `REPORT_CHAPTERS`), one appendix file (`appendix_a_reproduce.md`, "Reproducing the results"; see `REPORT_APPENDICES`, a tuple of one) and `references.md`, so it can be edited freely; the figures are the SVGs written by `scripts/make_report_diagrams.py` into `report/figures/` (`make deliverables-report` runs both steps). The script reads these files, assembles HTML and renders it with WeasyPrint; only the venv python has WeasyPrint, so the script re-runs itself under it (before printing anything), like `docs`.
 
 **Markdown conventions** (the subset of `parse_markdown`, plus):
 | Written as | Becomes |
@@ -49,7 +49,7 @@ Title page (from `config.json`) · table of contents (a real `TOC` field, pre-fi
 - every `{fig:}`, `{tab:}`, `{sec:}` resolves and every `[ref:]` has an entry; a figure file must exist; a table caption must be followed by a table; names must be unique; no heading level skipped or deeper than 3;
 - warnings only: a reference entry never cited, a figure or table never referred to;
 - the fonts exist (`fc-list`);
-- on the finished PDF (text read back with `pypdfium2`): page count between 30 and 60 (`REPORT_PAGES`); no title-page number, "Page 2 of N" on page 2; no leftover `{fig:`, `{tab:`, `[ref:`, `{{gen:` or placeholder word; every heading appears in the text; WeasyPrint reported no failed image load.
+- on the finished PDF (text read back with `pypdfium2`): page count between 18 and 22 (`REPORT_PAGES`); no title-page number, "Page 2 of N" on page 2; no leftover `{fig:`, `{tab:`, `[ref:`, `{{gen:` or placeholder word; every heading appears in the text; WeasyPrint reported no failed image load.
 Finally every page is rendered to `~/minibox-deliverables/build/report_pages/page-NN.png` so the layout can be looked at (the build cannot judge overlapping text or bad page breaks by itself).
 
 ### Functions of the report build
@@ -75,12 +75,12 @@ Finally every page is rendered to `~/minibox-deliverables/build/report_pages/pag
 | `svg_width(path)` | SVG file | width of its viewBox, 0 if none | none |
 | `load_report_sources(rdir, repo)` | report folder, repo | `(chapters, references)`; directives expanded | `BuildError` if a source file is missing |
 | `check_report_text(chapters)` | chapters | list of problems (placeholders, abstract length) | none |
-| `check_page_count(pages, bounds)` | page count | list of problems (empty if within 30 to 60) | none |
+| `check_page_count(pages, bounds)` | page count | list of problems (empty if within 18 to 22) | none |
 | `build_report_html(rdir, shown, repo)` | report folder, config values, repo | dict: `html`, `problems`, `warnings`, `stats`, `chapters` | `BuildError` for a missing source or figure; other problems are returned |
 | `pdf_pages_text(pdf)` / `render_pdf_pages(pdf, png_dir)` | the PDF | text per page / paths of the PNGs | `RepoWriteError` if `png_dir` is inside the repo (checked first) |
 | `verify_report_pdf(pages_text, chapters)` | text of the pages | list of problems | none |
 | `report_pdf_write(html, rdir, target)` | HTML, base folder for figures, PDF path | warnings logged by WeasyPrint | `RepoWriteError` if `target` is inside the repo (checked first) |
-| `cmd_report(args)` | CLI args | 0 | `RepoWriteError` first; re-runs under the venv python; `BuildError` with the list of problems; writes `build/report.html`, the PDF and the page images; prints page count, figures, tables, cited references, words per file, files left out of Appendix B, warnings |
+| `cmd_report(args)` | CLI args | 0 | `RepoWriteError` first; re-runs under the venv python; `BuildError` with the list of problems; writes `build/report.html`, the PDF and the page images; prints page count, figures, tables, cited references, words per file, warnings (the repository-tree appendix no longer exists, so the list of files left out of it is not printed; `tree_omitted` and the `{{gen:tree:...}}` directives remain available) |
 
 Pip pins for the venv are in `PIP_PDF` (`check-tools` prints the exact command if the report route is missing). `check-tools` now also prints the PDF report route (instead of the old "PDF (later task)" line), the LibreOffice render check of the Word file, and whether the three fonts are installed.
 

@@ -543,16 +543,16 @@ class ReportChecksTests(unittest.TestCase):
             self.assertTrue(any("abstract" in p for p in bd.check_report_text([self.abstract(n)])))
 
     def test_page_count_bounds(self):
-        self.assertEqual(bd.REPORT_PAGES, (30, 60))
-        self.assertEqual(bd.check_page_count(30), [])
-        self.assertEqual(bd.check_page_count(60), [])
-        self.assertTrue(bd.check_page_count(29))
-        self.assertTrue(bd.check_page_count(61))
+        self.assertEqual(bd.REPORT_PAGES, (18, 22))
+        self.assertEqual(bd.check_page_count(18), [])
+        self.assertEqual(bd.check_page_count(22), [])
+        self.assertTrue(bd.check_page_count(17))
+        self.assertTrue(bd.check_page_count(23))
 
     def test_pdf_text_checks(self):
         chs = [chapter("1.md", "# Intro\n")]
         self.assertTrue(any("page count" in p for p in bd.verify_report_pdf(["t", "Page 2 of 3 Intro", "x"], chs)))
-        pages = ["title"] + ["Page 2 of 30 Intro"] + ["text"] * 28
+        pages = ["title"] + ["Page 2 of 20 Intro"] + ["text"] * 18
         self.assertEqual(bd.verify_report_pdf(pages, chs), [])
         bad = list(pages)
         bad[3] = "see {fig:x} and TODO and [ref:y]"
@@ -561,7 +561,7 @@ class ReportChecksTests(unittest.TestCase):
         bad = ["Page 1 of 30"] + pages[1:]
         self.assertIn("the title page has a page number", bd.verify_report_pdf(bad, chs))
         self.assertTrue(any("footer" in p for p in bd.verify_report_pdf(["t", "no footer"] + ["x"] * 28, chs)))
-        self.assertTrue(any("heading missing" in p for p in bd.verify_report_pdf(["t", "Page 2 of 30"] + ["x"] * 28, chs)))
+        self.assertTrue(any("heading missing" in p for p in bd.verify_report_pdf(["t", "Page 2 of 20"] + ["x"] * 18, chs)))
 
 
 def make_report_dir(root, chapters=None, extra=""):
@@ -789,10 +789,10 @@ class AppendixTests(unittest.TestCase):
             toc = built["stats"]["toc"]
             titles = [t for _, t in toc]
             self.assertEqual(built["stats"]["chapters"], 10)
-            self.assertEqual(built["stats"]["appendices"], 3)
+            self.assertEqual(built["stats"]["appendices"], 1)
             self.assertEqual(titles.index("References"), titles.index("Chapter 10") + 1)
-            self.assertEqual([n for n, _ in toc if n.startswith("Appendix")], ["Appendix A", "Appendix B", "Appendix C"])
-            self.assertEqual(titles[-1], "Appendix text 3")
+            self.assertEqual([n for n, _ in toc if n.startswith("Appendix")], ["Appendix A"])
+            self.assertEqual(titles[-1], "Appendix text 1")
             self.assertIn('<section class="appendix">', built["html"])
             self.assertIn("Project Report</div>", built["html"])
             self.assertNotIn("Part 1", built["html"])
@@ -800,7 +800,7 @@ class AppendixTests(unittest.TestCase):
     def test_missing_appendix_is_an_error(self):
         with tempfile.TemporaryDirectory() as d:
             rdir = make_report_dir(d)
-            (rdir / bd.REPORT_APPENDICES[2]).unlink()
+            (rdir / bd.REPORT_APPENDICES[0]).unlink()
             with self.assertRaises(bd.BuildError):
                 bd.build_report_html(rdir, SHOWN)
 

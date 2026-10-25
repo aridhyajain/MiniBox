@@ -1380,8 +1380,8 @@ REPORT_ABSTRACT = "00_abstract.md"
 REPORT_CHAPTERS = ("01_introduction.md", "02_background.md", "03_design.md", "04_implementation.md",
                    "05_ui_security.md", "06_testing.md", "07_evaluation.md", "08_os_concepts.md",
                    "09_limitations.md", "10_conclusion.md")
-REPORT_APPENDICES = ("appendix_a_cli.md", "appendix_b_layout.md", "appendix_c_reproduce.md")
-REPORT_PAGES = (30, 60)             # allowed page count of the whole PDF
+REPORT_APPENDICES = ("appendix_a_reproduce.md",)
+REPORT_PAGES = (18, 22)             # allowed page count of the whole PDF
 BENCH_BEFORE, BENCH_AFTER = "reference-before-clone3", "reference"    # result folders used by {{gen:...}}
 PROBE_FILE = "analysis/attach_stall_probe.txt"
 # Left out of the repository tree in Appendix B (build outputs, caches, third-party code, empty markers).
@@ -2083,9 +2083,6 @@ def cmd_report(args):
     print("  figures: " + ", ".join("%s (%s)" % (l, k[4:]) for l, k in st["figures"]))
     print("  tables: " + ", ".join("%s (%s)" % (l, k[4:]) for l, k in st["tables"]))
     print("  references cited: " + ", ".join(st["cited"]))
-    omitted = tree_omitted()
-    if omitted:
-        print("  Appendix B omits files with no purpose in the docs: %s" % ", ".join(omitted))
     print("  verification: OK (no placeholders or {{gen:}} markers, all cross-references and citations resolved, figures present,")
     print("                abstract length, page count %d to %d, footer and fonts)" % REPORT_PAGES)
     for m in sorted(set(logged)):
