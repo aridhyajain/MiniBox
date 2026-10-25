@@ -281,7 +281,8 @@ class ReportTableTests(unittest.TestCase):
     def test_startup_table_copies_file_values(self):
         out = make_report_tables.startup_table(make_charts.read_csv(os.path.join(self.dir, "startup_summary.csv")))
         self.assertIn("| minibox_nolimits | 5 | 20.0 | 25.0 | 26.0 | 31.0 | 4.0 |", out)
-        self.assertIn("| docker | not measured: docker CLI not found |", out)
+        self.assertIn("| docker | - | - | - | - | - | - |", out)
+        self.assertTrue(out.endswith("\n\ndocker: not measured: docker CLI not found."))
 
     def test_memory_table_divides_by_k(self):
         out = make_report_tables.memory_table(make_charts.read_csv(os.path.join(self.dir, "memory.csv")))

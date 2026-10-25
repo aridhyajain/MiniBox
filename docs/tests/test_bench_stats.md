@@ -19,7 +19,7 @@ Unit tests (standard `unittest`, no root) for `bench/stats.py`, `bench/make_char
 | `ChartTests.test_nice_max` | axis rounding |
 | `ChartTests.test_log_ticks_cover_data_and_stop_one_tick_above`, `test_linear_ticks_fit_data`, `test_bar_label_text`, `test_startup_axis_is_log_and_labelled`, `test_legend_entries_do_not_overlap` | axis ticks, label text, "log scale" wording on the startup chart, legend layout |
 | `ReportTableTests.test_startup_table_has_the_migrate_row` | the `minibox_limits` and `minibox_limits_migrate` rows appear with the fixture's values |
-| `ReportTableTests.test_startup_table_copies_file_values` | CSV values appear unchanged in the startup table; docker row says "not measured" |
+| `ReportTableTests.test_startup_table_copies_file_values` | CSV values appear unchanged in the startup table; docker row is all "-" and its note is one sentence under the table |
 | `ReportTableTests.test_memory_table_divides_by_k` | per-container MiB = total / k / 1048576 (hand-checked fixture values); host row and docker note |
 | `ReportTableTests.test_incremental_and_limits` | incremental and limits tables, TIMEOUT row kept |
 | `ReportTableTests.test_pipe_in_text_is_escaped`, `test_machine_lines_and_full_report`, `test_main_rejects_missing_directory` | `\|` escaping; kernel/CPU/RAM/Docker lines and all sections; exit 1 for a missing directory |

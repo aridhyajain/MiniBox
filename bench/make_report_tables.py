@@ -35,14 +35,18 @@ def mib(value_bytes, divisor=1):
 
 
 def startup_table(rows):
-    """One row per configuration; a configuration that was not measured says so."""
+    """One row per configuration. A configuration that was not measured gets '-' in every cell
+    (so the table stays narrow) and its reason, copied from the CSV note, as a sentence under the table."""
     out = []
+    notes = []
     for r in rows:
         if r.get("status") != "measured":
-            out.append([r["config"], r.get("note") or "not measured", "-", "-", "-", "-", "-"])
+            out.append([r["config"], "-", "-", "-", "-", "-", "-"])
+            notes.append("%s: %s." % (r["config"], (r.get("note") or "not measured").rstrip(".")))
             continue
         out.append([r["config"], r["n"], r["min_ms"], r["median_ms"], r["mean_ms"], r["p95_ms"], r["stdev_ms"]])
-    return table(["Configuration", "n", "min (ms)", "median (ms)", "mean (ms)", "p95 (ms)", "stdev (ms)"], out)
+    text = table(["Configuration", "n", "min (ms)", "median (ms)", "mean (ms)", "p95 (ms)", "stdev (ms)"], out)
+    return text + ("\n\n" + " ".join(notes) if notes else "")
 
 
 def memory_table(rows):

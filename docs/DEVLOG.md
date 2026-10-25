@@ -257,3 +257,8 @@
 - `scripts/build_deliverables.py`: `REPORT_PAGES` = (18, 22); `REPORT_APPENDICES` has one file; the "Appendix B omits files" line was removed from `cmd_report`. The Word build is unchanged.
 - `tests/test_build_deliverables.py`: page bounds, one appendix, page-text fixtures of 20 pages. Docs: `docs/scripts/build_deliverables.md`, `docs/tests/test_build_deliverables.md`.
 - `src/ include/ ui/ bench/` untouched; no git, no sudo.
+
+## 2026-10-25 – Compact unmeasured row in Table 7.1
+- `bench/make_report_tables.py`: `startup_table` shows `-` in every cell of a row that was not measured and puts its CSV note as one sentence under the table; no number changed.
+- `tests/test_bench_stats.py`: `test_startup_table_copies_file_values` checks the all-`-` docker row and the sentence. Docs: `docs/bench/make_report_tables.md`, `docs/tests/test_bench_stats.md`.
+- Report (outside the repo): removed the single sub-headings 2.1.1 and 9.1; cross-references re-pointed to the parent sections. `src/ include/ ui/` untouched; no git, no sudo.
